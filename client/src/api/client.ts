@@ -1,0 +1,3 @@
+const API = import.meta.env.VITE_API_URL || '/api';
+export async function api<T>(path:string, options:RequestInit = {}):Promise<T> { const token=localStorage.getItem('token'); const response=await fetch(API+path,{...options,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},}); const data=await response.json().catch(()=>({})); if(!response.ok) throw new Error(data.message||'Ошибка запроса'); return data; }
+export const get=(path:string)=>api<any>(path); export const post=(path:string,body:any)=>api<any>(path,{method:'POST',body:JSON.stringify(body)}); export const patch=(path:string,body:any)=>api<any>(path,{method:'PATCH',body:JSON.stringify(body)}); export const remove=(path:string)=>api<any>(path,{method:'DELETE'});

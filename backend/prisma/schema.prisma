@@ -1,0 +1,305 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  SELLER
+}
+enum ProductStatus {
+  ACTIVE
+  ARCHIVED
+}
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  DEBT
+  MIXED
+}
+enum DebtStatus {
+  ACTIVE
+  PAID
+}
+enum StockMovementType {
+  PURCHASE
+  SALE
+  RETURN
+  WRITE_OFF
+  ADJUSTMENT
+}
+enum TaskStatus {
+  TODO
+  DONE
+}
+model User {
+  id String @id @default(cuid())
+  name String
+  email String @unique
+  password String
+  role Role @default(SELLER)
+  active Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sales Sale[]
+  auditLogs AuditLog[]
+  expenses Expense[]
+  purchases SupplierPurchase[]
+  createdTasks Task[] @relation("TaskCreatedBy")
+  completedTasks Task[] @relation("TaskCompletedBy")
+}
+model Category {
+  id String @id @default(cuid())
+  name String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  products Product[]
+}
+model Product {
+  id String @id @default(cuid())
+  name String
+  sku String @unique
+  categoryId String
+  purchasePrice Decimal @db.Decimal(14,2)
+  salePrice Decimal @db.Decimal(14,2)
+  stock Int @default(0)
+  minStock Int @default(0)
+  unit String @default("шт")
+  status ProductStatus @default(ACTIVE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  category Category @relation(fields: [categoryId], references: [id])
+  saleItems SaleItem[]
+  adjustments StockAdjustment[]
+  purchaseItems PurchaseItem[]
+  movements StockMovement[]
+  returnItems SaleReturnItem[]
+}
+model Sale {
+  id String @id @default(cuid())
+  userId String
+  totalAmount Decimal @db.Decimal(14,2)
+  totalProfit Decimal @db.Decimal(14,2)
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id])
+  customerId String?
+  paymentMethod PaymentMethod @default(CASH)
+  dueDate DateTime?
+  customer Customer? @relation(fields: [customerId], references: [id])
+  items SaleItem[]
+  payments SalePayment[]
+  debt CustomerDebt?
+  returns SaleReturn[]
+  @@index([createdAt])
+  @@index([customerId])
+}
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  method     String
+  path       String
+  statusCode Int
+  ip         String?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  @@index([createdAt])
+  @@index([userId])
+}
+model Task {
+  id String @id @default(cuid())
+  title String
+  description String?
+  status TaskStatus @default(TODO)
+  createdById String
+  completedById String?
+  createdAt DateTime @default(now())
+  completedAt DateTime?
+  createdBy User @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  completedBy User? @relation("TaskCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  @@index([status, createdAt])
+  @@index([createdById])
+  @@index([completedById])
+}
+model SaleItem {
+  id String @id @default(cuid())
+  saleId String
+  productId String
+  quantity Int
+  purchasePrice Decimal @db.Decimal(14,2)
+  salePrice Decimal @db.Decimal(14,2)
+  profit Decimal @db.Decimal(14,2)
+  total Decimal @db.Decimal(14,2)
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+}
+model StockAdjustment {
+  id String @id @default(cuid())
+  productId String
+  userId String
+  previousStock Int
+  newStock Int
+  reason String
+  createdAt DateTime @default(now())
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model SaleReturn {
+  id String @id @default(cuid())
+  saleId String
+  userId String
+  reason String
+  createdAt DateTime @default(now())
+  sale Sale @relation(fields: [saleId], references: [id])
+  items SaleReturnItem[]
+  @@index([saleId])
+  @@index([createdAt])
+}
+
+model SaleReturnItem {
+  id String @id @default(cuid())
+  returnId String
+  productId String
+  quantity Int
+  amount Decimal @db.Decimal(14,2)
+  return SaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+}
+
+model StockMovement {
+  id String @id @default(cuid())
+  productId String
+  userId String?
+  type StockMovementType
+  quantity Int
+  beforeStock Int
+  afterStock Int
+  reason String?
+  saleId String?
+  createdAt DateTime @default(now())
+  product Product @relation(fields: [productId], references: [id])
+  @@index([productId, createdAt])
+  @@index([type, createdAt])
+}
+
+model Customer {
+  id String @id @default(cuid())
+  name String
+  phone String?
+  address String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sales Sale[]
+  debts CustomerDebt[]
+  payments CustomerPayment[]
+  @@index([phone])
+}
+
+model CustomerDebt {
+  id String @id @default(cuid())
+  customerId String
+  saleId String @unique
+  amount Decimal @db.Decimal(14,2)
+  paidAmount Decimal @default(0) @db.Decimal(14,2)
+  dueDate DateTime?
+  status DebtStatus @default(ACTIVE)
+  createdAt DateTime @default(now())
+  customer Customer @relation(fields: [customerId], references: [id])
+  sale Sale @relation(fields: [saleId], references: [id])
+  payments CustomerPayment[]
+  @@index([customerId, status])
+  @@index([dueDate])
+}
+
+model SalePayment {
+  id String @id @default(cuid())
+  saleId String
+  method PaymentMethod
+  amount Decimal @db.Decimal(14,2)
+  createdAt DateTime @default(now())
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  @@index([method])
+}
+
+model CustomerPayment {
+  id String @id @default(cuid())
+  customerId String
+  debtId String?
+  method PaymentMethod
+  amount Decimal @db.Decimal(14,2)
+  createdAt DateTime @default(now())
+  customer Customer @relation(fields: [customerId], references: [id])
+  debt CustomerDebt? @relation(fields: [debtId], references: [id])
+  @@index([customerId, createdAt])
+}
+
+model Expense {
+  id String @id @default(cuid())
+  category String
+  amount Decimal @db.Decimal(14,2)
+  date DateTime @default(now())
+  comment String?
+  responsibleId String?
+  responsible User? @relation(fields: [responsibleId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+  @@index([date])
+  @@index([category])
+}
+
+model Supplier {
+  id String @id @default(cuid())
+  name String
+  phone String?
+  contactPerson String?
+  comment String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  purchases SupplierPurchase[]
+  payments SupplierPayment[]
+}
+
+model SupplierPurchase {
+  id String @id @default(cuid())
+  supplierId String
+  userId String
+  totalAmount Decimal @db.Decimal(14,2)
+  logisticsCost Decimal @default(0) @db.Decimal(14,2)
+  paidAmount Decimal @default(0) @db.Decimal(14,2)
+  dueDate DateTime?
+  createdAt DateTime @default(now())
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+  items PurchaseItem[]
+  payments SupplierPayment[]
+  @@index([supplierId])
+  @@index([dueDate])
+}
+
+model SupplierPayment {
+  id String @id @default(cuid())
+  supplierId String
+  purchaseId String?
+  amount Decimal @db.Decimal(14,2)
+  method PaymentMethod
+  createdAt DateTime @default(now())
+  supplier Supplier @relation(fields: [supplierId], references: [id])
+  purchase SupplierPurchase? @relation(fields: [purchaseId], references: [id])
+  @@index([supplierId, createdAt])
+  @@index([purchaseId])
+}
+
+model PurchaseItem {
+  id String @id @default(cuid())
+  purchaseId String
+  productId String
+  quantity Int
+  unitCost Decimal @db.Decimal(14,2)
+  total Decimal @db.Decimal(14,2)
+  actualUnitCost Decimal @default(0) @db.Decimal(14,2)
+  actualTotal Decimal @default(0) @db.Decimal(14,2)
+  purchase SupplierPurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+}

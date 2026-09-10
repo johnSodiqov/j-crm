@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: shop-crm-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: shop_crm
+    ports:
+      - "5432:5432"
+    volumes:
+      - shop-crm-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shop_crm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  shop-crm-postgres-data:

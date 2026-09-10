@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env*
+!.env.example
+*.log
+*.tsbuildinfo
+client/.vite/
+client/.env.local
+client/.env.production
+backend/prisma/dev.db
