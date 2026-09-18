@@ -3,7 +3,7 @@ import { AppService } from './app.service';
 import { AuthGuard } from './common/auth.guard';
 import { RoleGuard } from './common/role.guard';
 import { Roles } from './common/auth.decorator';
-import { CategoryDto, CreateUserDto, CustomerDto, DebtPaymentDto, ExpenseDto, LoginDto, ProductDto, PurchaseDto, SaleDto, SaleReturnDto, StockAdjustmentDto, SupplierDto, SupplierPaymentDto, TaskDto, UpdateCategoryDto, UpdateProductDto, UpdateUserDto } from './common/dto';
+import { CategoryDto, CreateUserDto, CustomerDto, DebtPaymentDto, ExpenseDto, LoginDto, ProductDto, PurchaseDto, SaleDto, SaleReturnDto, StockAdjustmentDto, SupplierDto, SupplierPaymentDto, TaskDto, UpdateCategoryDto, UpdateCustomerDto, UpdateProductDto, UpdateUserDto } from './common/dto';
 @Controller()
 @UseGuards(AuthGuard, RoleGuard)
 export class AppController {
@@ -26,6 +26,7 @@ export class AppController {
   @Get('customers') customers(@Req() req:any, @Query('search') search?:string) { return this.service.customers(search, req.user.role); }
   @Get('customers/:id') customer(@Req() req:any, @Param('id') id:string) { return this.service.customer(id, req.user.role); }
   @Post('customers') createCustomer(@Body() b:CustomerDto) { return this.service.createCustomer(b); }
+  @Patch('customers/:id') @Roles('ADMIN') updateCustomer(@Param('id') id:string, @Body() b:UpdateCustomerDto) { return this.service.updateCustomer(id, b); }
   @Get('expenses') @Roles('ADMIN') expenses(@Query() q:any) { return this.service.expenses(q); }
   @Post('expenses') @Roles('ADMIN') createExpense(@Req() req:any, @Body() b:ExpenseDto) { return this.service.createExpense(req.user.sub, b); }
   @Get('suppliers') @Roles('ADMIN') suppliers() { return this.service.suppliers(); }
@@ -33,7 +34,7 @@ export class AppController {
   @Post('suppliers') @Roles('ADMIN') createSupplier(@Body() b:SupplierDto) { return this.service.createSupplier(b); }
   @Post('purchases') @Roles('ADMIN') createPurchase(@Req() req:any, @Body() b:PurchaseDto) { return this.service.createPurchase(req.user.sub, b); }
   @Post('suppliers/payment') @Roles('ADMIN') paySupplier(@Body() b:SupplierPaymentDto) { return this.service.paySupplier(b); }
-  @Get('debts') @Roles('ADMIN') debts(@Query('status') status?:string) { return this.service.debts(status); }
+  @Get('debts') debts(@Query('status') status?:string) { return this.service.debts(status); }
   @Post('debts/payment') @Roles('ADMIN') payDebt(@Body() b:DebtPaymentDto) { return this.service.payDebt(b); }
   @Get('warehouse') warehouse(@Req() req:any) { return this.service.warehouse(req.user.role); }
   @Get('warehouse/:productId/movements') warehouseMovements(@Param('productId') productId:string) { return this.service.warehouseMovements(productId); }

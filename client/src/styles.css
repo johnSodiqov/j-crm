@@ -158,6 +158,12 @@ label { display:grid; gap:7px; color:#536057; font-size:13px; font-weight:600; }
 .category-error { margin:-18px 0 18px; }
 .category-edit { display:grid; gap:14px; }
 .user-edit-form { display:grid; gap:14px; }
+.customer-toolbar { margin-bottom:16px; }
+.customer-toolbar .input { max-width:420px; }
+.customer-profile { min-width:0; }
+.customer-payment-form { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:14px 0 20px; }
+.customer-payment-form .input,.customer-payment-form .select { flex:1 1 150px; min-width:140px; }
+.table-actions { display:flex; gap:6px; flex-wrap:wrap; }
 .user-active { display:flex; align-items:center; gap:8px; }
 .user-active input { width:16px; height:16px; }
 .analytics-cards-mobile { display:none; }

@@ -22,7 +22,7 @@ import { Todo } from "./pages/Todo";
 function Page() {
   const { pathname } = useLocation();
   const currentUser = JSON.parse(localStorage.getItem("user") || "null");
-  const adminOnlyPaths = ["/reports", "/audit", "/users", "/expenses", "/suppliers", "/purchases", "/debts"];
+  const adminOnlyPaths = ["/reports", "/audit", "/users", "/expenses", "/suppliers", "/purchases"];
   if (adminOnlyPaths.includes(pathname) && currentUser?.role !== "ADMIN") return <Navigate to="/" replace />;
   if (pathname === "/") return <Dashboard />;
   if (pathname === "/products") return <Products />;

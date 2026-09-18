@@ -16,6 +16,7 @@ export class SaleDto {
 export class CategoryDto { @IsString() @IsNotEmpty() name!: string; }
 export class UpdateCategoryDto { @IsString() @IsNotEmpty() name!: string; }
 export class CustomerDto { @IsString() @IsNotEmpty() name!: string; @IsOptional() @Matches(/^\+?[0-9 ()-]{7,20}$/) phone?: string; @IsOptional() @IsString() address?: string; }
+export class UpdateCustomerDto { @IsOptional() @IsString() @IsNotEmpty() name?: string; @IsOptional() @Matches(/^\+?[0-9 ()-]{7,20}$/) phone?: string; @IsOptional() @IsString() address?: string; }
 export class ExpenseDto { @IsString() @IsNotEmpty() category!: string; @Type(() => Number) @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(0) amount!: number; @IsOptional() @IsDateString() date?: string; @IsOptional() @IsString() comment?: string; }
 export class SupplierDto { @IsString() @IsNotEmpty() name!: string; @IsOptional() @Matches(/^\+?[0-9 ()-]{7,20}$/) phone?: string; @IsOptional() @IsString() contactPerson?: string; @IsOptional() @IsString() comment?: string; }
 export class PurchaseLineDto { @IsString() @IsNotEmpty() productId!: string; @Type(() => Number) @IsInt() @Min(1) quantity!: number; @Type(() => Number) @IsNumber({ allowNaN: false, allowInfinity: false }) @Min(0) unitCost!: number; }

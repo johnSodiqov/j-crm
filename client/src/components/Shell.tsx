@@ -33,7 +33,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("theme", theme);
   }, [theme]);
-  const visibleMenu = menu.filter(([path]) => !["/products", "/categories", "/users", "/audit"].includes(path) && (path !== "/reports" && path !== "/expenses" && path !== "/suppliers" && path !== "/purchases" && path !== "/debts" || currentUser?.role === "ADMIN"));
+  const visibleMenu = menu.filter(([path]) => !["/products", "/categories", "/users", "/audit"].includes(path) && (path !== "/reports" && path !== "/expenses" && path !== "/suppliers" && path !== "/purchases" || currentUser?.role === "ADMIN"));
   const moreMenu = menu.filter(([path]) => ["/products", "/categories", "/users", "/audit"].includes(path)).filter(([path]) => path !== "/users" && path !== "/audit" || currentUser?.role === "ADMIN");
   return (
     <div className="shell">
