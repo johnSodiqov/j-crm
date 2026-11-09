@@ -1,6 +1,6 @@
 ﻿import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronDown, Package, Plus, UserPlus } from "lucide-react";
+import { Check, ChevronDown, Package, Plus, UserPlus, X } from "lucide-react";
 import { get, post } from "../api/client";
 import { Header } from "../components/Header";
 import { MoneyInput } from "../components/MoneyInput";
@@ -10,6 +10,64 @@ import { useLanguage } from "../utils/i18n";
 import { quantityStep, quantityLabel } from "../utils/product";
 
 type SalesSelectOption = { value: string; label: string };
+type SaleDraft = {
+  id: string;
+  number: number;
+  cart: any[];
+  customerId: string;
+  paymentMethod: string;
+  cashAmount: number;
+  cardAmount: number;
+  transferAmount: number;
+  debtAmount: number;
+  dueDate: string;
+};
+type SalesTabs = { activeId: string; nextNumber: number; drafts: SaleDraft[] };
+
+const SALES_TABS_STORAGE_KEY = "sales-receipt-tabs";
+
+function createSaleDraft(number: number): SaleDraft {
+  return {
+    id: `receipt-${Date.now()}-${number}`,
+    number,
+    cart: [],
+    customerId: "",
+    paymentMethod: "CASH",
+    cashAmount: 0,
+    cardAmount: 0,
+    transferAmount: 0,
+    debtAmount: 0,
+    dueDate: "",
+  };
+}
+
+function loadSalesTabs(): SalesTabs {
+  const saved = localStorage.getItem(SALES_TABS_STORAGE_KEY);
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved) as SalesTabs;
+      if (Array.isArray(parsed.drafts) && parsed.drafts.length > 0) {
+        const drafts = parsed.drafts.filter((draft) =>
+          draft && typeof draft.id === "string" && Number.isFinite(Number(draft.number)) && Array.isArray(draft.cart),
+        );
+        if (drafts.length === 0) throw new Error("Invalid saved receipt tabs");
+        const activeId = drafts.some((draft) => draft.id === parsed.activeId)
+          ? parsed.activeId
+          : drafts[0].id;
+        return {
+          activeId,
+          nextNumber: Math.max(Number(parsed.nextNumber) || 1, ...drafts.map((draft) => Number(draft.number) + 1)),
+          drafts,
+        };
+      }
+    } catch {
+      const draft = createSaleDraft(1);
+      return { activeId: draft.id, nextNumber: 2, drafts: [draft] };
+    }
+  }
+  const draft = createSaleDraft(1);
+  return { activeId: draft.id, nextNumber: 2, drafts: [draft] };
+}
 
 function SalesSelect({ value, options, placeholder, onChange }: { value: string; options: SalesSelectOption[]; placeholder?: string; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false);
@@ -44,47 +102,87 @@ export function Sales() {
   const { data } = useQuery({ queryKey: ["products"], queryFn: () => get("/products?limit=100") });
   const { data: customers } = useQuery({ queryKey: ["customers"], queryFn: () => get("/customers") });
 
-  const [cart, setCart] = useState<any[]>([]);
-  const [customerId, setCustomerId] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("CASH");
-  const [cashAmount, setCashAmount] = useState(0);
-  const [cardAmount, setCardAmount] = useState(0);
-  const [transferAmount, setTransferAmount] = useState(0);
-  const [debtAmount, setDebtAmount] = useState(0);
-  const [dueDate, setDueDate] = useState("");
+  const [tabs, setTabs] = useState<SalesTabs>(loadSalesTabs);
+  const activeDraft = tabs.drafts.find((draft) => draft.id === tabs.activeId) || tabs.drafts[0];
+  const { cart, customerId, paymentMethod, cashAmount, cardAmount, transferAmount, debtAmount, dueDate } = activeDraft;
   const [newCustomerOpen, setNewCustomerOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
   const [newCustomerAddress, setNewCustomerAddress] = useState("");
 
+  useEffect(() => {
+    localStorage.setItem(SALES_TABS_STORAGE_KEY, JSON.stringify(tabs));
+  }, [tabs]);
+
+  const updateActiveDraft = (update: Partial<SaleDraft>) => {
+    setTabs((current) => ({
+      ...current,
+      drafts: current.drafts.map((draft) => draft.id === current.activeId ? { ...draft, ...update } : draft),
+    }));
+  };
+
+  const addReceiptTab = () => setTabs((current) => {
+    const draft = createSaleDraft(current.nextNumber);
+    return {
+      activeId: draft.id,
+      nextNumber: current.nextNumber + 1,
+      drafts: [...current.drafts, draft],
+    };
+  });
+
+  const closeReceiptTab = (id: string) => {
+    if (tabs.drafts.length < 2) return;
+    const draft = tabs.drafts.find((item) => item.id === id);
+    if (draft?.cart.length && !window.confirm(t("Удалить чек с товарами?"))) return;
+    setTabs((current) => {
+      const index = current.drafts.findIndex((item) => item.id === id);
+      const drafts = current.drafts.filter((item) => item.id !== id);
+      return {
+        ...current,
+        drafts,
+        activeId: current.activeId === id ? drafts[Math.max(0, index - 1)].id : current.activeId,
+      };
+    });
+  };
+
   const total = cart.reduce((sum, item) => sum + Number(item.salePrice) * Number(item.qty), 0);
   const mixedTotal = cashAmount + cardAmount + transferAmount + debtAmount;
-  const paymentRows = paymentMethod === "MIXED"
-    ? [
-        { method: "CASH", amount: cashAmount },
-        { method: "CARD", amount: cardAmount },
-        { method: "TRANSFER", amount: transferAmount },
-        { method: "DEBT", amount: debtAmount },
-      ].filter((row) => row.amount > 0)
-    : [{ method: paymentMethod, amount: total }];
+  const updateDraftById = (id: string, update: Partial<SaleDraft>) => {
+    setTabs((current) => ({
+      ...current,
+      drafts: current.drafts.map((draft) => draft.id === id ? { ...draft, ...update } : draft),
+    }));
+  };
 
   const sell = useMutation({
-    mutationFn: () => post("/sales", {
-      items: cart.map((item) => ({ productId: item.id, quantity: item.qty })),
-      customerId: customerId || undefined,
-      paymentMethod,
-      dueDate: dueDate || undefined,
-      payments: paymentRows,
-    }),
-    onSuccess: () => {
-      setCart([]);
-      setCustomerId("");
-      setCashAmount(0);
-      setCardAmount(0);
-      setTransferAmount(0);
-      setDebtAmount(0);
-      setDueDate("");
-      setPaymentMethod("CASH");
+    mutationFn: (draft: SaleDraft) => {
+      const payments = draft.paymentMethod === "MIXED"
+        ? [
+            { method: "CASH", amount: draft.cashAmount },
+            { method: "CARD", amount: draft.cardAmount },
+            { method: "TRANSFER", amount: draft.transferAmount },
+            { method: "DEBT", amount: draft.debtAmount },
+          ].filter((row) => row.amount > 0)
+        : [{ method: draft.paymentMethod, amount: draft.cart.reduce((sum, item) => sum + Number(item.salePrice) * Number(item.qty), 0) }];
+      return post("/sales", {
+        items: draft.cart.map((item) => ({ productId: item.id, quantity: item.qty })),
+        customerId: draft.customerId || undefined,
+        paymentMethod: draft.paymentMethod,
+        dueDate: draft.dueDate || undefined,
+        payments,
+      });
+    },
+    onSuccess: (_, soldDraft) => {
+      updateDraftById(soldDraft.id, {
+        cart: [],
+        customerId: "",
+        cashAmount: 0,
+        cardAmount: 0,
+        transferAmount: 0,
+        debtAmount: 0,
+        dueDate: "",
+        paymentMethod: "CASH",
+      });
       queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       alert("Продажа оформлена");
@@ -96,18 +194,19 @@ export function Sales() {
     const increment = Math.min(1, Number(product.stock) - (existing?.qty || 0));
     if (increment <= 0) return;
     if (existing) {
-      setCart(cart.map((item) => item.id === product.id ? { ...item, qty: Number((item.qty + increment).toFixed(3)) } : item));
+      updateActiveDraft({ cart: cart.map((item) => item.id === product.id ? { ...item, qty: Number((item.qty + increment).toFixed(3)) } : item) });
       return;
     }
-    setCart([...cart, { ...product, qty: increment }]);
+    updateActiveDraft({ cart: [...cart, { ...product, qty: increment }] });
   };
 
   const isPaymentValid = paymentMethod !== "MIXED" ? total > 0 : Math.abs(mixedTotal - total) < 0.01;
   const createCustomer = useMutation({
-    mutationFn: () => post("/customers", { name: newCustomerName, phone: newCustomerPhone, address: newCustomerAddress }),
-    onSuccess: (customer: any) => {
+    mutationFn: (input: { tabId: string; name: string; phone: string; address: string }) =>
+      post("/customers", { name: input.name, phone: input.phone, address: input.address }),
+    onSuccess: (customer: any, input) => {
       queryClient.invalidateQueries({ queryKey: ["customers"] });
-      setCustomerId(customer.id);
+      updateDraftById(input.tabId, { customerId: customer.id });
       setNewCustomerName("");
       setNewCustomerPhone("");
       setNewCustomerAddress("");
@@ -118,6 +217,30 @@ export function Sales() {
   return (
     <div className="sales-page">
       <Header title="Новая продажа" />
+      <div className="receipt-tabs-bar">
+        <div className="receipt-tabs" role="tablist" aria-label={t("Чеки")}>
+          {tabs.drafts.map((draft) => (
+            <div className={`receipt-tab${draft.id === activeDraft.id ? " is-active" : ""}`} key={draft.id} role="presentation">
+              <button
+                className="receipt-tab-select"
+                type="button"
+                role="tab"
+                aria-selected={draft.id === activeDraft.id}
+                onClick={() => setTabs((current) => ({ ...current, activeId: draft.id }))}
+              >
+                <span>{t("Чек")} {draft.number}</span>
+                {draft.cart.length > 0 && <span className="receipt-tab-count">{draft.cart.length}</span>}
+              </button>
+              {tabs.drafts.length > 1 && <button className="receipt-tab-close" type="button" aria-label={`${t("Закрыть чек")} ${draft.number}`} title={t("Закрыть чек")} onClick={() => closeReceiptTab(draft.id)}>
+                <X size={14} />
+              </button>}
+            </div>
+          ))}
+        </div>
+        <button className="button secondary receipt-tab-add" type="button" onClick={addReceiptTab}>
+          <Plus size={16} /> {t("Новый чек")}
+        </button>
+      </div>
       <div className="grid grid2">
         <div className="card sales-products">
           <h2 className="display">{t("Выберите товар")}</h2>
@@ -144,7 +267,7 @@ export function Sales() {
             {cart.map((item) => (
               <div className="cart-line" key={item.id}>
                 <span className="cart-name">{item.name}</span>
-                <input className="input cart-qty" type="number" aria-label={`${t("Количество")} (${item.unit})`} min={quantityStep(item.unit) === "1" ? "1" : "0.001"} max={item.stock} step={quantityStep(item.unit)} value={item.qty || ""} onChange={(event) => setCart(cart.map((row) => row.id === item.id ? { ...row, qty: Number(event.target.value) } : row))} />
+                <input className="input cart-qty" type="number" aria-label={`${t("Количество")} (${item.unit})`} min={quantityStep(item.unit) === "1" ? "1" : "0.001"} max={item.stock} step={quantityStep(item.unit)} value={item.qty || ""} onChange={(event) => updateActiveDraft({ cart: cart.map((row) => row.id === item.id ? { ...row, qty: Number(event.target.value) } : row) })} />
                 <b className="cart-total">{money(item.salePrice * item.qty)}</b>
               </div>
             ))}
@@ -155,7 +278,7 @@ export function Sales() {
           <div className="sales-field">
             <div className="label">{t("Клиент")}</div>
             <div className="sales-select-row">
-              <SalesSelect value={customerId} placeholder={t("Без клиента")} onChange={setCustomerId} options={[{ value: "", label: t("Без клиента") }, ...(customers || []).map((customer: any) => ({ value: customer.id, label: `${customer.name}${customer.phone ? ` (${customer.phone})` : ""}` }))]} />
+              <SalesSelect value={customerId} placeholder={t("Без клиента")} onChange={(value) => updateActiveDraft({ customerId: value })} options={[{ value: "", label: t("Без клиента") }, ...(customers || []).map((customer: any) => ({ value: customer.id, label: `${customer.name}${customer.phone ? ` (${customer.phone})` : ""}` }))]} />
               <button className="button secondary icon-button" type="button" title={t("Добавить клиента")} aria-label={t("Добавить клиента")} onClick={() => setNewCustomerOpen(true)}>
                 <UserPlus size={17} />
               </button>
@@ -164,26 +287,26 @@ export function Sales() {
 
           <label className="label">
             {t("Способ оплаты")}
-            <SalesSelect value={paymentMethod} onChange={setPaymentMethod} options={[{ value: "CASH", label: t("Наличные") }, { value: "CARD", label: t("Банковская карта") }, { value: "TRANSFER", label: t("Перевод") }, { value: "DEBT", label: t("Долг") }, { value: "MIXED", label: t("Смешанная оплата") }]} />
+            <SalesSelect value={paymentMethod} onChange={(value) => updateActiveDraft({ paymentMethod: value })} options={[{ value: "CASH", label: t("Наличные") }, { value: "CARD", label: t("Банковская карта") }, { value: "TRANSFER", label: t("Перевод") }, { value: "DEBT", label: t("Долг") }, { value: "MIXED", label: t("Смешанная оплата") }]} />
           </label>
 
           {paymentMethod === "MIXED" && (
             <div className="mixed-payments">
               <label className="label">
                 {t("Наличные")}
-                <MoneyInput className="input" value={cashAmount} onValueChange={(value) => setCashAmount(value === "" ? 0 : value)} />
+                <MoneyInput className="input" value={cashAmount} onValueChange={(value) => updateActiveDraft({ cashAmount: value === "" ? 0 : value })} />
               </label>
               <label className="label">
                 {t("Банковская карта")}
-                <MoneyInput className="input" value={cardAmount} onValueChange={(value) => setCardAmount(value === "" ? 0 : value)} />
+                <MoneyInput className="input" value={cardAmount} onValueChange={(value) => updateActiveDraft({ cardAmount: value === "" ? 0 : value })} />
               </label>
               <label className="label">
                 {t("Перевод")}
-                <MoneyInput className="input" value={transferAmount} onValueChange={(value) => setTransferAmount(value === "" ? 0 : value)} />
+                <MoneyInput className="input" value={transferAmount} onValueChange={(value) => updateActiveDraft({ transferAmount: value === "" ? 0 : value })} />
               </label>
               <label className="label">
                 {t("Долг")}
-                <MoneyInput className="input" value={debtAmount} onValueChange={(value) => setDebtAmount(value === "" ? 0 : value)} />
+                <MoneyInput className="input" value={debtAmount} onValueChange={(value) => updateActiveDraft({ debtAmount: value === "" ? 0 : value })} />
               </label>
               <div className="muted">{t("Сумма")}: {money(mixedTotal)} / {money(total)}</div>
             </div>
@@ -192,7 +315,7 @@ export function Sales() {
           {(paymentMethod === "DEBT" || paymentMethod === "MIXED") && (
             <label className="label">
               {t("Срок погашения")}
-              <input className="input" type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
+              <input className="input" type="date" value={dueDate} onChange={(event) => updateActiveDraft({ dueDate: event.target.value })} />
             </label>
           )}
 
@@ -200,14 +323,14 @@ export function Sales() {
             <div className="muted">{t("Итого")}: {money(mixedTotal)} · {t("Долг")}: {money(debtAmount)}</div>
           )}
 
-          <button className="button" type="button" disabled={!cart.length || !isPaymentValid || sell.isPending} onClick={() => sell.mutate()}>
+          <button className="button" type="button" disabled={!cart.length || !isPaymentValid || sell.isPending} onClick={() => sell.mutate(activeDraft)}>
             {sell.isPending ? t("Оформление...") : t("Оформить продажу")}
           </button>
           {sell.isError && <div className="error">{(sell.error as Error).message}</div>}
         </div>
       </div>
       {newCustomerOpen && <Modal title={t("Новый клиент")} close={() => setNewCustomerOpen(false)}>
-        <form className="new-customer-form" onSubmit={(event) => { event.preventDefault(); if (newCustomerName.trim()) createCustomer.mutate(); }}>
+        <form className="new-customer-form" onSubmit={(event) => { event.preventDefault(); if (newCustomerName.trim()) createCustomer.mutate({ tabId: activeDraft.id, name: newCustomerName, phone: newCustomerPhone, address: newCustomerAddress }); }}>
           <label>{t("Имя")}<input className="input" type="text" autoFocus required value={newCustomerName} onChange={(event) => setNewCustomerName(event.target.value)} /></label>
           <label>{t("Телефон")}<input className="input" type="tel" value={newCustomerPhone} onChange={(event) => setNewCustomerPhone(event.target.value)} /></label>
           <label>{t("Адрес")}<input className="input" type="text" value={newCustomerAddress} onChange={(event) => setNewCustomerAddress(event.target.value)} /></label>
