@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DebtStatus, PaymentMethod, Prisma, ProductStatus, StockMovementType } from '@prisma/client';
 import Decimal from 'decimal.js';
-import * as bcrypt from 'bcryptjs';
+import * as bcryptjs from 'bcryptjs';
 import { PrismaService } from './prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 
@@ -21,7 +21,7 @@ export class AppService {
     } catch { if (!this.exchangeRateCache) throw new BadRequestException('Не удалось получить курс USD'); }
     return this.exchangeRateCache;
   }
-  async login(email: string, password: string) { const user = await this.db.user.findUnique({ where: { email } }); if (!user || !user.active || !(await bcrypt.compare(password, user.password))) throw new ConflictException('Неверный email или пароль'); const safe = { id: user.id, name: user.name, email: user.email, role: user.role }; return { accessToken: this.jwt.sign({ sub: user.id, email: user.email, role: user.role }), user: safe }; }
+  async login(email: string, password: string) { const user = await this.db.user.findUnique({ where: { email } }); if (!user || !user.active || !(await bcryptjs.compare(password, user.password))) throw new ConflictException('Неверный email или пароль'); const safe = { id: user.id, name: user.name, email: user.email, role: user.role }; return { accessToken: this.jwt.sign({ sub: user.id, email: user.email, role: user.role }), user: safe }; }
   async products(query: any, role?: string) {
     const categoryIds = String(query.categoryIds || "").split(",").filter(Boolean);
     const units = String(query.units || "").split(",").filter(Boolean);
@@ -349,7 +349,7 @@ export class AppService {
     }));
   }
   async users() { return this.db.user.findMany({ select: { id:true,name:true,email:true,role:true,active:true,createdAt:true }, orderBy: { createdAt: 'desc' } }); }
-  async createUser(data: any) { return this.db.user.create({ data: { ...data, password: await bcrypt.hash(data.password, 10) }, select: { id:true,name:true,email:true,role:true,active:true } }); }
-  async updateUser(id: string, data: any) { const payload = { ...data }; if (payload.password) payload.password = await bcrypt.hash(payload.password, 10); else delete payload.password; return this.db.user.update({ where: { id }, data: payload, select: { id:true,name:true,email:true,role:true,active:true } }); }
+  async createUser(data: any) { return this.db.user.create({ data: { ...data, password: await bcryptjs.hash(data.password, 10) }, select: { id:true,name:true,email:true,role:true,active:true } }); }
+  async updateUser(id: string, data: any) { const payload = { ...data }; if (payload.password) payload.password = await bcryptjs.hash(payload.password, 10); else delete payload.password; return this.db.user.update({ where: { id }, data: payload, select: { id:true,name:true,email:true,role:true,active:true } }); }
   deleteUser(id: string) { return this.db.user.update({ where: { id }, data: { active: false }, select: { id:true,active:true } }); }
 }

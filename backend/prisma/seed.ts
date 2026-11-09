@@ -1,9 +1,9 @@
 import { PrismaClient, Role } from '@prisma/client';
-import * as bcrypt from 'bcryptjs';
+import * as bcryptjs from 'bcryptjs';
 const prisma = new PrismaClient();
 async function main() {
-  const password = await bcrypt.hash('admin123', 10);
-  const sellerPassword = await bcrypt.hash('seller123', 10);
+  const password = await bcryptjs.hash('admin123', 10);
+  const sellerPassword = await bcryptjs.hash('seller123', 10);
   await prisma.user.upsert({ where: { email: 'admin@example.com' }, update: {}, create: { name: 'Администратор', email: 'admin@example.com', password, role: Role.ADMIN } });
   await prisma.user.upsert({ where: { email: 'seller@example.com' }, update: {}, create: { name: 'Продавец', email: 'seller@example.com', password: sellerPassword, role: Role.SELLER } });
   const drinks = await prisma.category.upsert({ where: { name: 'Напитки' }, update: {}, create: { name: 'Напитки' } });
