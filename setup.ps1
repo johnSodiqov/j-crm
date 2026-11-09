@@ -13,9 +13,6 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 npm ci
 Pop-Location
 
-Write-Host 'Starting PostgreSQL...'
-docker compose up -d --wait postgres
-
 Write-Host 'Applying database migrations and seed data...'
 Push-Location backend
 npx prisma migrate deploy

@@ -14,9 +14,6 @@ cd client
 npm ci
 cd ..
 
-printf '%s\n' 'Starting PostgreSQL...'
-docker compose up -d --wait postgres
-
 printf '%s\n' 'Applying database migrations and seed data...'
 cd backend
 npx prisma migrate deploy

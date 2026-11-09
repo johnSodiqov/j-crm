@@ -7,10 +7,9 @@ CRM for a retail shop. The repository contains a React/Vite client, a NestJS API
 - Git
 - Node.js 20 or newer
 - npm
-- PostgreSQL for Windows when using `start.bat`
-- Docker Desktop with Docker Compose only when using `setup.ps1` or `docker compose`
+- PostgreSQL 14 or newer, installed as a local service
 
-The Docker-based setup starts PostgreSQL in a container. The one-click Windows launcher instead connects to a locally installed PostgreSQL service.
+Docker is not required. Internet access is needed on first setup to download the project dependencies.
 
 ## Quick Start
 
@@ -19,15 +18,15 @@ The Docker-based setup starts PostgreSQL in a container. The one-click Windows l
 ```powershell
 git clone <GITHUB_REPOSITORY_URL>
 cd crm
-.\setup.ps1
 ```
 
-If PowerShell blocks local scripts, run this once in the current terminal:
+Install PostgreSQL and create an empty database named `shop_crm` (for example, in pgAdmin). Copy `backend/.env.example` to `backend/.env` if it does not exist, then set `DATABASE_URL` to use your PostgreSQL username and password:
 
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\setup.ps1
+```env
+DATABASE_URL="postgresql://<USER>:<PASSWORD>@localhost:5432/shop_crm?schema=public"
 ```
+
+Start the PostgreSQL Windows service, then run `.\start.bat`. It installs dependencies, applies migrations, seeds demo data, starts the API and web app, and opens the app. Alternatively, run `.\setup.ps1` to prepare the app after configuring PostgreSQL, then start the API and client in separate terminals as described below.
 
 ### macOS/Linux
 
@@ -38,22 +37,32 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-The setup script:
+The setup scripts install dependencies and prepare the Prisma database. PostgreSQL must already be installed and running, and the empty `shop_crm` database must exist:
 
 1. Creates `backend/.env` and `client/.env` from the examples.
 2. Installs dependencies with `npm ci`.
-3. Starts PostgreSQL in Docker.
+3. Connects to the local PostgreSQL database configured in `backend/.env`.
 4. Generates Prisma Client.
 5. Applies all migrations.
 6. Seeds demo users and starter products.
 
 ## Run Development Servers
 
-### Windows one-click startup without Docker
+### Windows one-click startup
 
-Install Node.js 20 or newer and PostgreSQL for Windows, and make sure the PostgreSQL service is running. Create the `shop_crm` database and configure `DATABASE_URL` in `backend/.env` to match your local PostgreSQL username and password. Then double-click `start.bat` in the project root. It installs npm dependencies if needed, applies migrations, seeds demo data once, starts the API and web app, and opens http://localhost:5173. Docker is not used. Keep the API and Web windows open while using the app.
+Install Node.js 20 or newer and PostgreSQL on the computer. Create an empty database named `shop_crm` and note your PostgreSQL username and password. Clone or copy the complete project folder to the computer, update `DATABASE_URL` in `backend/.env` (created from the example on first run) to match those credentials, and start the PostgreSQL service. Double-click `start.bat` in the project root. It installs dependencies if needed, applies migrations, adds demo data, starts the API and web app, and opens http://localhost:5173. Keep the API and Web windows open while using the app.
 
-Use two terminals from the repository root.
+Each computer gets its own local database; this setup does not copy or sync data from another computer. Clone the repository rather than copying local `.env` files or `node_modules`.
+
+### macOS/Linux
+
+Install Node.js 20 or newer, npm, and PostgreSQL, create the `shop_crm` database, and configure `backend/.env`. Then run:
+
+```bash
+./setup.sh
+```
+
+The setup script installs dependencies, applies migrations, and seeds demo data. Then use two terminals from the repository root to start the API and client:
 
 Terminal 1, API:
 
@@ -87,18 +96,9 @@ npx prisma migrate deploy
 npx prisma db seed
 ```
 
-Start or stop PostgreSQL:
+On Windows, start or stop the PostgreSQL service from the Services app. On macOS/Linux, manage it with the service manager used by your PostgreSQL installation.
 
-```bash
-docker compose up -d postgres
-docker compose stop postgres
-```
-
-To delete the local database volume and all local data:
-
-```bash
-docker compose down -v
-```
+For a fresh local database, create a new empty database named `shop_crm` in pgAdmin or with `createdb`; applying migrations does not delete existing database data.
 
 ## Production Build
 
@@ -133,9 +133,9 @@ Never commit `.env` files or production secrets.
 
 The API may already be running. Check `http://localhost:3000/auth/login` or stop the old Node process before starting another one.
 
-### Port 5432 is already in use
+### Cannot connect to PostgreSQL
 
-Stop the locally installed PostgreSQL service or change the host port in `docker-compose.yml` and update `DATABASE_URL` in `backend/.env`.
+Make sure the PostgreSQL service is running, the `shop_crm` database exists, and the username/password/port in `backend/.env` are correct.
 
 ### Prisma Client generation fails on Windows with EPERM
 
@@ -148,9 +148,9 @@ npx prisma generate
 
 ### Reset local demo data
 
+Create a new empty `shop_crm` database using pgAdmin or `createdb`, then run:
+
 ```bash
-docker compose down -v
-docker compose up -d postgres
 cd backend
 npx prisma migrate deploy
 npx prisma db seed

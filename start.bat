@@ -40,6 +40,7 @@ if not exist "%ROOT%client\.env" (
 )
 
 if not exist "%ROOT%backend\node_modules" goto install_backend
+if not exist "%ROOT%backend\node_modules\bcryptjs" goto install_backend
 goto check_client
 
 :install_backend
@@ -70,21 +71,19 @@ popd
 
 :prepare_database
 pushd "%ROOT%backend"
-if not exist "node_modules\.prisma\client\index.d.ts" (
-    echo Generating Prisma Client...
-    call npx prisma generate
-    if errorlevel 1 (
-        popd
-        echo Prisma Client generation failed.
-        goto failed
-    )
+echo Generating Prisma Client...
+call npx prisma generate
+if errorlevel 1 (
+    popd
+    echo Prisma Client generation failed.
+    goto failed
 )
 echo Checking PostgreSQL connection and applying migrations...
 call npx prisma migrate deploy
 if errorlevel 1 (
     popd
     echo Could not connect to PostgreSQL or apply database migrations.
-    echo Make sure PostgreSQL is installed and running, the shop_crm database exists,
+    echo Make sure the PostgreSQL service is running, the shop_crm database exists,
     echo and DATABASE_URL in backend\.env has the correct connection details.
     goto failed
 )
