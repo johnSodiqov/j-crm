@@ -4,6 +4,7 @@ type PopularProduct = {
   productId: string;
   name: string;
   sku: string;
+  unit: string;
   quantity: number;
   revenue: number;
   profit: number;
@@ -18,7 +19,7 @@ type Sale = {
   items: Array<{
     id: string;
     quantity: number;
-    product: { name: string; sku?: string };
+    product: { name: string; sku?: string; unit?: string };
   }>;
 };
 
@@ -31,7 +32,7 @@ export function MobilePopularProducts({ products }: { products: PopularProduct[]
           <div className="mobile-analytics-title">{product.name}</div>
           <div className="mobile-analytics-sku">SKU: {product.sku}</div>
           <div className="mobile-analytics-stats">
-            <span>Продано <b>{product.quantity} шт.</b></span>
+            <span>Продано <b>{product.quantity} {product.unit || "шт"}</b></span>
             <span>Выручка <b>{money(product.revenue)}</b></span>
             <span>Прибыль <b>{money(product.profit)}</b></span>
           </div>
@@ -46,7 +47,6 @@ export function MobileSalesDetails({ sales }: { sales: Sale[] }) {
   return (
     <div className="mobile-analytics-list">
       {sales.map((sale) => {
-        const units = sale.items.reduce((sum, item) => sum + item.quantity, 0);
         return (
           <article className="mobile-analytics-card sale-card" key={sale.id}>
             <div className="mobile-sale-date">{new Date(sale.createdAt).toLocaleString("ru-RU")}</div>
@@ -63,7 +63,7 @@ export function MobileSalesDetails({ sales }: { sales: Sale[] }) {
               <b>{sale.user?.name || "-"}</b>
             </div>
             <div className="mobile-sale-summary">
-              <span>{units} шт.</span>
+              <span>{sale.items.map((item) => `${item.quantity} ${item.product.unit || "шт"}`).join(" · ")}</span>
               <b>{money(sale.totalAmount)}</b>
               <span>Прибыль <b>{money(sale.totalProfit)}</b></span>
             </div>

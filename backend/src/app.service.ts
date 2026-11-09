@@ -22,21 +22,79 @@ export class AppService {
     return this.exchangeRateCache;
   }
   async login(email: string, password: string) { const user = await this.db.user.findUnique({ where: { email } }); if (!user || !user.active || !(await bcrypt.compare(password, user.password))) throw new ConflictException('Неверный email или пароль'); const safe = { id: user.id, name: user.name, email: user.email, role: user.role }; return { accessToken: this.jwt.sign({ sub: user.id, email: user.email, role: user.role }), user: safe }; }
-  async products(query: any, role?: string) { const where: Prisma.ProductWhereInput = { ...(query.includeArchived ? {} : { status: ProductStatus.ACTIVE }), ...(query.search ? { OR: [{ name: { contains: query.search, mode: 'insensitive' } }, { sku: { contains: query.search, mode: 'insensitive' } }] } : {}), ...(query.categoryId ? { categoryId: query.categoryId } : {}) }; const page = Math.max(1, Number(query.page) || 1); const limit = Math.min(100, Math.max(1, Number(query.limit) || 10)); const [items, total] = await this.db.$transaction([this.db.product.findMany({ where, include: { category: true }, orderBy: { [query.sort || 'createdAt']: query.order === 'asc' ? 'asc' : 'desc' }, skip: (page - 1) * limit, take: limit }), this.db.product.count({ where })]); const safeItems = role === 'ADMIN' ? items : items.map(({ purchasePrice, ...item }) => item); return { items: this.clean(safeItems), total, page, limit, pages: Math.ceil(total / limit) }; }
+  async products(query: any, role?: string) {
+    const categoryIds = String(query.categoryIds || "").split(",").filter(Boolean);
+    const units = String(query.units || "").split(",").filter(Boolean);
+    const dateRange = (from?: string, to?: string) => {
+      const range: { gte?: Date; lte?: Date } = {};
+      if (from) range.gte = new Date(`${from}T00:00:00`);
+      if (to) range.lte = new Date(`${to}T23:59:59.999`);
+      return Object.keys(range).length ? range : undefined;
+    };
+    const createdAt = dateRange(query.createdFrom, query.createdTo);
+    const updatedAt = dateRange(query.updatedFrom, query.updatedTo);
+    const statusFilter = query.status === "ALL" || query.includeArchived === "true" || query.includeArchived === true
+      ? {}
+      : query.status === "ACTIVE"
+        ? { status: ProductStatus.ACTIVE }
+        : query.status === "INACTIVE"
+          ? { status: ProductStatus.INACTIVE }
+          : query.status === "ARCHIVED"
+            ? { status: ProductStatus.ARCHIVED }
+          : { status: ProductStatus.ACTIVE };
+    const where: Prisma.ProductWhereInput = {
+      ...statusFilter,
+      ...(query.search ? { OR: [{ name: { contains: query.search, mode: "insensitive" } }, { sku: { contains: query.search, mode: "insensitive" } }] } : {}),
+      ...(categoryIds.length ? { categoryId: { in: categoryIds } } : query.categoryId ? { categoryId: query.categoryId } : {}),
+      ...(units.length ? { unit: { in: units } } : {}),
+      ...(createdAt ? { createdAt } : {}),
+      ...(updatedAt ? { updatedAt } : {}),
+    };
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 25));
+    const [items, total] = await this.db.$transaction([
+      this.db.product.findMany({ where, include: { category: true }, orderBy: { [query.sort || "createdAt"]: query.order === "asc" ? "asc" : "desc" }, skip: (page - 1) * limit, take: limit }),
+      this.db.product.count({ where }),
+    ]);
+    const safeItems = role === "ADMIN" ? items : items.map(({ purchasePrice, ...item }) => item);
+    return { items: this.clean(safeItems), total, page, limit, pages: Math.ceil(total / limit) };
+  }
   async product(id: string, role?: string) { const p = await this.db.product.findUnique({ where: { id }, include: { category: true } }); if (!p) throw new NotFoundException('Товар не найден'); if (role !== 'ADMIN') { const { purchasePrice, ...safe } = p; return this.clean(safe); } return this.clean(p); }
-  async createProduct(data: any) { if (data.purchasePrice < 0 || data.salePrice < 0 || data.stock < 0 || data.minStock < 0) throw new BadRequestException('Цены и количество не могут быть отрицательными'); const payload = { ...data, sku: String(data.sku).trim().toUpperCase(), purchasePrice: new Decimal(data.purchasePrice), salePrice: new Decimal(data.salePrice) }; if (!payload.sku) throw new BadRequestException('Артикул обязателен'); try { return this.clean(await this.db.product.create({ data: payload, include: { category: true } })); } catch (e: any) { if (e.code === 'P2002') throw new ConflictException('SKU уже используется'); throw e; } }
-  async updateProduct(id: string, data: any) { if (data.purchasePrice !== undefined && data.purchasePrice < 0 || data.salePrice !== undefined && data.salePrice < 0 || data.stock !== undefined && data.stock < 0) throw new BadRequestException('Значения не могут быть отрицательными'); const payload = { ...data }; if (payload.sku !== undefined) { payload.sku = String(payload.sku).trim().toUpperCase(); if (!payload.sku) throw new BadRequestException('Артикул обязателен'); } if (payload.purchasePrice !== undefined) payload.purchasePrice = new Decimal(payload.purchasePrice); if (payload.salePrice !== undefined) payload.salePrice = new Decimal(payload.salePrice); try { return this.clean(await this.db.product.update({ where: { id }, data: payload, include: { category: true } })); } catch (e: any) { if (e.code === 'P2002') throw new ConflictException('SKU уже используется'); throw new NotFoundException('Товар не найден'); } }
+  async createProduct(data: any) { if (data.purchasePrice < 0 || data.salePrice < 0 || data.stock < 0 || data.minStock < 0) throw new BadRequestException('Цены и количество не могут быть отрицательными'); const payload = { ...data, sku: String(data.sku).trim().toUpperCase(), purchasePrice: new Decimal(data.purchasePrice), salePrice: new Decimal(data.salePrice), stock: new Decimal(data.stock), minStock: new Decimal(data.minStock) }; if (!payload.sku) throw new BadRequestException('Артикул обязателен'); try { return this.clean(await this.db.product.create({ data: payload, include: { category: true } })); } catch (e: any) { if (e.code === 'P2002') throw new ConflictException('SKU уже используется'); throw e; } }
+  async updateProduct(id: string, data: any) { if (data.purchasePrice !== undefined && data.purchasePrice < 0 || data.salePrice !== undefined && data.salePrice < 0 || data.stock !== undefined && data.stock < 0 || data.minStock !== undefined && data.minStock < 0) throw new BadRequestException('Значения не могут быть отрицательными'); const payload = { ...data }; if (payload.sku !== undefined) { payload.sku = String(payload.sku).trim().toUpperCase(); if (!payload.sku) throw new BadRequestException('Артикул обязателен'); } if (payload.purchasePrice !== undefined) payload.purchasePrice = new Decimal(payload.purchasePrice); if (payload.salePrice !== undefined) payload.salePrice = new Decimal(payload.salePrice); if (payload.stock !== undefined) payload.stock = new Decimal(payload.stock); if (payload.minStock !== undefined) payload.minStock = new Decimal(payload.minStock); try { return this.clean(await this.db.product.update({ where: { id }, data: payload, include: { category: true } })); } catch (e: any) { if (e.code === 'P2002') throw new ConflictException('SKU уже используется'); throw new NotFoundException('Товар не найден'); } }
   async archiveProduct(id: string) { return this.updateProduct(id, { status: ProductStatus.ARCHIVED }); }
   categories() { return this.db.category.findMany({ include: { _count: { select: { products: true } } }, orderBy: { name: 'asc' } }); }
   async createCategory(name: string) { try { return await this.db.category.create({ data: { name } }); } catch { throw new ConflictException('Категория уже существует'); } }
   async updateCategory(id: string, name: string) { try { return await this.db.category.update({ where: { id }, data: { name } }); } catch { throw new NotFoundException('Категория не найдена'); } }
   async deleteCategory(id: string) { const count = await this.db.product.count({ where: { categoryId: id } }); if (count) throw new ConflictException('Нельзя удалить категорию с товарами'); await this.db.category.delete({ where: { id } }); return { ok: true }; }
-  async sales(query: any, role?: string) { const items = await this.db.sale.findMany({ include: { user: { select: { name: true } }, items: { include: { product: true } }, payments: true }, orderBy: { createdAt: 'desc' }, take: Math.min(100, Number(query.limit) || 50) }); const safe = role === 'ADMIN' ? items : items.map(({ totalProfit, ...sale }) => ({ ...sale, items: sale.items.map(({ purchasePrice, profit, ...line }) => ({ ...line, product: (({ purchasePrice, ...product }) => product)(line.product) })) })); return this.clean(safe); }
+  async sales(query: any, role?: string) { const items = await this.db.sale.findMany({ include: { user: { select: { name: true } }, items: { include: { product: true } }, payments: true }, orderBy: { createdAt: 'desc' }, take: Math.min(100, Number(query.limit) || 50) }); const safe = role === 'ADMIN' ? items : items.map(({ totalProfit, items, ...sale }) => ({ ...sale, items: items.map(({ profit, purchasePrice, ...item }) => item) })); return this.clean(safe); }
   async sale(id: string, role?: string) { const item = await this.db.sale.findUnique({ where: { id }, include: { user: { select: { name: true } }, items: { include: { product: true } }, payments: true } }); if (!item) throw new NotFoundException('Продажа не найдена'); if (role !== 'ADMIN') { const { totalProfit, ...sale } = item; return this.clean({ ...sale, items: sale.items.map(({ purchasePrice, profit, ...line }) => ({ ...line, product: (({ purchasePrice, ...product }) => product)(line.product) })) }); } return this.clean(item); }
   async customers(search?: string, role?: string) { const customers = await this.db.customer.findMany({ where: search ? { OR: [{ name: { contains: search, mode: 'insensitive' } }, { phone: { contains: search } }] } : undefined, include: { _count: { select: { sales: true } }, debts: { where: { status: DebtStatus.ACTIVE }, select: { amount: true, paidAmount: true } } }, orderBy: { name: 'asc' } }); return this.clean(role === 'ADMIN' ? customers : customers.map(({ debts, ...customer }) => customer)); }
   async createCustomer(data: any) { return this.clean(await this.db.customer.create({ data: { name: data.name.trim(), phone: data.phone?.trim() || undefined, address: data.address?.trim() || undefined } })); }
   async updateCustomer(id: string, data: any) { try { return this.clean(await this.db.customer.update({ where: { id }, data: { ...(data.name !== undefined ? { name: data.name.trim() } : {}), ...(data.phone !== undefined ? { phone: data.phone.trim() || null } : {}), ...(data.address !== undefined ? { address: data.address.trim() || null } : {}) } })); } catch { throw new NotFoundException('Клиент не найден'); } }
-  async customer(id: string, role?: string) { const customer = await this.db.customer.findUnique({ where: { id }, include: { sales: { include: { items: { include: { product: { select: { name: true } } } }, payments: true, returns: { include: { items: { include: { product: { select: { name: true } } } } } } }, orderBy: { createdAt: 'desc' } }, debts: { include: { payments: true }, orderBy: { createdAt: 'desc' } }, payments: { orderBy: { createdAt: 'desc' } } } }); if (!customer) throw new NotFoundException('Клиент не найден'); if (role !== 'ADMIN') { const { sales, ...safeCustomer } = customer; return this.clean({ ...safeCustomer, sales: sales.map(({ totalProfit, returns: saleReturns, items, ...sale }) => ({ ...sale, items: items.map(({ profit, purchasePrice, ...item }) => item) })) }); } return this.clean(customer); }
+  async customer(id: string, role?: string) {
+    const customer = await this.db.customer.findUnique({
+      where: { id },
+      include: {
+        sales: {
+          include: {
+            items: { include: { product: { select: { name: true, sku: true, unit: true } } } },
+            payments: true,
+            returns: { include: { items: { include: { product: { select: { name: true, unit: true } } } } } },
+          },
+          orderBy: { createdAt: "desc" },
+        },
+        debts: { include: { payments: true }, orderBy: { createdAt: "desc" } },
+        payments: { orderBy: { createdAt: "desc" } },
+      },
+    });
+    if (!customer) throw new NotFoundException("Клиент не найден");
+    if (role !== "ADMIN") {
+      const { sales, ...safeCustomer } = customer;
+      return this.clean({ ...safeCustomer, sales: sales.map(({ totalProfit, returns: saleReturns, items, ...sale }) => ({ ...sale, items: items.map(({ profit, purchasePrice, ...item }) => item) })) });
+    }
+    return this.clean(customer);
+  }
   async expenses(query: any) { const where: Prisma.ExpenseWhereInput = { ...(query.from || query.to ? { date: { ...(query.from ? { gte: new Date(query.from) } : {}), ...(query.to ? { lte: new Date(query.to) } : {}) } } : {}) }; return this.clean(await this.db.expense.findMany({ where, include: { responsible: { select: { name: true } } }, orderBy: { date: 'desc' } })); }
   async createExpense(userId: string, data: any) { if (data.amount <= 0) throw new BadRequestException('Сумма расхода должна быть больше нуля'); const date = data.date ? new Date(data.date) : new Date(); if (Number.isNaN(date.getTime())) throw new BadRequestException('Некорректная дата расхода'); return this.clean(await this.db.expense.create({ data: { category: data.category.trim(), amount: new Decimal(data.amount), date, comment: data.comment?.trim() || undefined, responsibleId: userId } })); }
   async suppliers() { return this.clean(await this.db.supplier.findMany({ include: { purchases: { include: { items: true }, orderBy: { createdAt: 'desc' } } }, orderBy: { name: 'asc' } })); }
@@ -50,9 +108,12 @@ export class AppService {
       for (const line of input.items) {
         const product = await tx.product.findUnique({ where: { id: line.productId } });
         if (!product) throw new NotFoundException('Товар не найден');
-        const itemTotal = new Decimal(line.unitCost).mul(line.quantity); total = total.add(itemTotal);
+        const itemTotal = new Decimal(line.unitCost).mul(line.quantity).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        total = total.add(itemTotal);
         items.push({ productId: line.productId, quantity: line.quantity, unitCost: line.unitCost, total: itemTotal });
-        await tx.stockMovement.create({ data: { productId: line.productId, userId, type: StockMovementType.PURCHASE, quantity: line.quantity, beforeStock: product.stock, afterStock: product.stock + line.quantity, reason: 'Закупка' } });
+        const stock = new Decimal(product.stock.toString());
+        const quantity = new Decimal(line.quantity);
+        await tx.stockMovement.create({ data: { productId: line.productId, userId, type: StockMovementType.PURCHASE, quantity, beforeStock: stock, afterStock: stock.add(quantity), reason: 'Закупка' } });
       }
       const logisticsCost = new Decimal(input.logisticsCost || 0);
       const paid = new Decimal(input.paidAmount || 0);
@@ -66,11 +127,13 @@ export class AppService {
       for (const item of actualItems) {
         const product = await tx.product.findUnique({ where: { id: item.productId } });
         if (!product) throw new NotFoundException('Товар не найден');
-        const previousStockValue = new Decimal(product.stock).mul(product.purchasePrice.toString());
+        const stock = new Decimal(product.stock.toString());
+        const previousStockValue = stock.mul(product.purchasePrice.toString());
         const incomingStockValue = new Decimal(item.actualTotal.toString());
-        const nextStock = product.stock + item.quantity;
-        const weightedCost = nextStock > 0 ? previousStockValue.add(incomingStockValue).div(nextStock) : item.actualUnitCost;
-        await tx.product.update({ where: { id: item.productId }, data: { stock: { increment: item.quantity }, purchasePrice: weightedCost } });
+        const quantity = new Decimal(item.quantity);
+        const nextStock = stock.add(quantity);
+        const weightedCost = nextStock.gt(0) ? previousStockValue.add(incomingStockValue).div(nextStock) : item.actualUnitCost;
+        await tx.product.update({ where: { id: item.productId }, data: { stock: { increment: quantity }, purchasePrice: weightedCost } });
       }
       return this.clean(await tx.supplierPurchase.create({ data: { supplierId: input.supplierId, userId, totalAmount: total, logisticsCost, paidAmount: paid, dueDate: input.dueDate ? new Date(input.dueDate) : undefined, items: { create: actualItems }, payments: paid.gt(0) ? { create: { supplierId: input.supplierId, amount: paid, method: PaymentMethod.CASH } } : undefined }, include: { items: true, payments: true } }));
     });
@@ -110,15 +173,18 @@ export class AppService {
       const rows: any[] = [];
       for (const line of input.items) {
         const product = await tx.product.findUnique({ where: { id: line.productId } });
-        if (!product || product.status === ProductStatus.ARCHIVED) throw new NotFoundException('Товар не найден');
-        if (!Number.isInteger(line.quantity) || line.quantity <= 0) throw new BadRequestException('Количество должно быть положительным целым');
-        if (product.stock < line.quantity) throw new BadRequestException(`Недостаточно товара: ${product.name}`);
-        const rowTotal = new Decimal(product.salePrice.toString()).mul(line.quantity);
-        const rowProfit = new Decimal(product.salePrice.toString()).sub(product.purchasePrice.toString()).mul(line.quantity);
+        if (!product || product.status !== ProductStatus.ACTIVE) throw new NotFoundException("Товар не найден или деактивирован");
+        const stock = new Decimal(product.stock.toString());
+        const quantity = new Decimal(line.quantity);
+        if (quantity.decimalPlaces() > 3 || !quantity.gt(0)) throw new BadRequestException('Количество должно быть положительным и содержать не более трех знаков после запятой');
+        if (stock.lt(quantity)) throw new BadRequestException(`Недостаточно товара: ${product.name}`);
+        const rowTotal = new Decimal(product.salePrice.toString()).mul(quantity).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const rowProfit = new Decimal(product.salePrice.toString()).sub(product.purchasePrice.toString()).mul(quantity).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
         total = total.add(rowTotal); profit = profit.add(rowProfit);
         rows.push({ productId: product.id, quantity: line.quantity, purchasePrice: product.purchasePrice, salePrice: product.salePrice, total: rowTotal, profit: rowProfit });
-        await tx.product.update({ where: { id: product.id }, data: { stock: { decrement: line.quantity } } });
-        await tx.stockMovement.create({ data: { productId: product.id, userId, type: StockMovementType.SALE, quantity: line.quantity, beforeStock: product.stock, afterStock: product.stock - line.quantity, reason: 'Продажа' } });
+        const nextStock = stock.sub(quantity);
+        await tx.product.update({ where: { id: product.id }, data: { stock: { decrement: quantity } } });
+        await tx.stockMovement.create({ data: { productId: product.id, userId, type: StockMovementType.SALE, quantity, beforeStock: stock, afterStock: nextStock, reason: 'Продажа' } });
       }
       const method = input.paymentMethod || PaymentMethod.CASH;
       const payments = input.payments?.length ? input.payments : [{ method, amount: total.toNumber() }];
@@ -139,20 +205,23 @@ export class AppService {
       const item = sale.items.find(row => row.productId === input.productId);
       if (!item) throw new BadRequestException('Товар отсутствует в чеке');
       const returned = await tx.saleReturnItem.aggregate({ where: { return: { saleId: sale.id }, productId: item.productId }, _sum: { quantity: true } });
-      if ((returned._sum.quantity || 0) + input.quantity > item.quantity) throw new BadRequestException('Нельзя вернуть больше проданного количества');
+      const returnedQuantity = new Decimal(returned._sum.quantity?.toString() || 0);
+      const returnQuantity = new Decimal(input.quantity);
+      if (returnedQuantity.add(returnQuantity).gt(item.quantity.toString())) throw new BadRequestException('Нельзя вернуть больше проданного количества');
       const product = await tx.product.findUnique({ where: { id: item.productId } });
       if (!product) throw new NotFoundException('Товар не найден');
-      const result = await tx.saleReturn.create({ data: { saleId: sale.id, userId, reason: input.reason.trim(), items: { create: { productId: item.productId, quantity: input.quantity, amount: new Decimal(item.salePrice.toString()).mul(input.quantity) } } }, include: { items: true } });
-      await tx.product.update({ where: { id: product.id }, data: { stock: { increment: input.quantity } } });
-      await tx.stockMovement.create({ data: { productId: product.id, userId, type: StockMovementType.RETURN, quantity: input.quantity, beforeStock: product.stock, afterStock: product.stock + input.quantity, reason: input.reason, saleId: sale.id } });
+      const result = await tx.saleReturn.create({ data: { saleId: sale.id, userId, reason: input.reason.trim(), items: { create: { productId: item.productId, quantity: input.quantity, amount: new Decimal(item.salePrice.toString()).mul(returnQuantity).toDecimalPlaces(2, Decimal.ROUND_HALF_UP) } } }, include: { items: true } });
+      const stock = new Decimal(product.stock.toString());
+      await tx.product.update({ where: { id: product.id }, data: { stock: { increment: returnQuantity } } });
+      await tx.stockMovement.create({ data: { productId: product.id, userId, type: StockMovementType.RETURN, quantity: returnQuantity, beforeStock: stock, afterStock: stock.add(returnQuantity), reason: input.reason, saleId: sale.id } });
       return this.clean(result);
     });
   }
   async returns(query: any) { return this.clean(await this.db.saleReturn.findMany({ where: query.saleId ? { saleId: query.saleId } : undefined, include: { sale: { select: { id: true, createdAt: true } }, items: { include: { product: { select: { name: true, sku: true } } } } }, orderBy: { createdAt: 'desc' } })); }
-  async warehouseMovements(productId: string) { return this.clean(await this.db.stockMovement.findMany({ where: { productId }, orderBy: { createdAt: 'desc' }, take: 100 })); }
-  async warehouse(role?: string) { const products = await this.db.product.findMany({ where: { status: ProductStatus.ACTIVE }, include: { adjustments: { orderBy: { createdAt: 'desc' }, take: 10 } }, orderBy: { stock: 'asc' } }); return this.clean(products.map(({ purchasePrice, ...p }) => ({ ...(role === 'ADMIN' ? { purchasePrice } : {}), ...p, stockStatus: p.stock === 0 ? 'Нет в наличии' : p.stock <= p.minStock ? 'Мало' : 'В наличии' })));
+  async warehouseMovements(productId: string) { return this.clean(await this.db.stockMovement.findMany({ where: { productId }, include: { product: { select: { unit: true } } }, orderBy: { createdAt: 'desc' }, take: 100 })); }
+  async warehouse(role?: string) { const products = await this.db.product.findMany({ where: { status: ProductStatus.ACTIVE }, include: { adjustments: { orderBy: { createdAt: 'desc' }, take: 10 } }, orderBy: { stock: 'asc' } }); return this.clean(products.map(({ purchasePrice, ...p }) => ({ ...(role === 'ADMIN' ? { purchasePrice } : {}), ...p, stockStatus: p.stock.isZero() ? 'Нет в наличии' : p.stock.lte(p.minStock) ? 'Мало' : 'В наличии' })));
   }
-  async adjustment(userId: string, input: any) { if (input.newStock < 0) throw new BadRequestException('Количество не может быть отрицательным'); return this.db.$transaction(async tx => { const p = await tx.product.findUnique({ where: { id: input.productId } }); if (!p) throw new NotFoundException('Товар не найден'); await tx.product.update({ where: { id: p.id }, data: { stock: input.newStock } }); await tx.stockMovement.create({ data: { productId: p.id, userId, type: StockMovementType.ADJUSTMENT, quantity: Math.abs(input.newStock - p.stock), beforeStock: p.stock, afterStock: input.newStock, reason: input.reason } }); return tx.stockAdjustment.create({ data: { productId: p.id, userId, previousStock: p.stock, newStock: input.newStock, reason: input.reason } }); }); }
+  async adjustment(userId: string, input: any) { if (input.newStock < 0) throw new BadRequestException('Количество не может быть отрицательным'); const newStock = new Decimal(input.newStock); return this.db.$transaction(async tx => { const p = await tx.product.findUnique({ where: { id: input.productId } }); if (!p) throw new NotFoundException('Товар не найден'); const previousStock = new Decimal(p.stock.toString()); await tx.product.update({ where: { id: p.id }, data: { stock: newStock } }); await tx.stockMovement.create({ data: { productId: p.id, userId, type: StockMovementType.ADJUSTMENT, quantity: newStock.sub(previousStock).abs(), beforeStock: previousStock, afterStock: newStock, reason: input.reason } }); return tx.stockAdjustment.create({ data: { productId: p.id, userId, previousStock, newStock, reason: input.reason } }); }); }
   async dashboard(role?: string) {
     const start = new Date(); start.setHours(0, 0, 0, 0);
     const monthStart = new Date(start.getFullYear(), start.getMonth(), 1);
@@ -184,7 +253,7 @@ export class AppService {
     const safeRecent = role === 'ADMIN' ? recent : recent.map(({ totalAmount, totalProfit, ...sale }) => sale);
     const result: any = { today: role === 'ADMIN' ? today : { _count: today._count }, products, recent: safeRecent, weekly: role === 'ADMIN' ? weekly : [], low };
     const returnedRevenue = monthReturns.reduce((sum, item) => sum + Number(item.amount), 0);
-    const returnedProfit = monthReturns.reduce((sum, item) => { const saleItem = item.return.sale.items.find(saleLine => saleLine.productId === item.productId); return sum + (Number(item.amount) - Number(saleItem?.purchasePrice || 0) * item.quantity); }, 0);
+    const returnedProfit = monthReturns.reduce((sum, item) => { const saleItem = item.return.sale.items.find(saleLine => saleLine.productId === item.productId); return sum + (Number(item.amount) - Number(saleItem?.purchasePrice || 0) * Number(item.quantity)); }, 0);
     if (role === 'ADMIN') Object.assign(result, { month: { salesCount: monthSales._count, revenue: Number(monthSales._sum.totalAmount || 0) - returnedRevenue, profit: Number(monthSales._sum.totalProfit || 0) - returnedProfit - Number(monthExpenses._sum.amount || 0), grossProfit: Number(monthSales._sum.totalProfit || 0) - returnedProfit, expenses: monthExpenses._sum.amount, logistics: Number(monthLogistics._sum.logisticsCost || 0), returns: returnedRevenue }, customers: customerCount, customerDebt: receivable, supplierDebt: payable, cash, popular });
     return this.clean(result);
   }
@@ -196,21 +265,22 @@ export class AppService {
     const saleWhere: Prisma.SaleWhereInput = { createdAt: { gte: from, lte: to }, ...(query.userId ? { userId: query.userId } : {}), ...(query.categoryId ? { items: { some: { product: { categoryId: query.categoryId } } } } : {}) };
     const sales = await this.db.sale.findMany({ where: saleWhere, include: { user: { select: { name: true } }, payments: true, items: { include: { product: { select: { name: true, sku: true, unit: true, category: { select: { name: true } } } } } } }, orderBy: { createdAt: 'desc' } });
     const allItems = sales.flatMap(s => s.items);
-    const grouped = new Map<string, { productId: string; name: string; sku: string; quantity: number; revenue: number; profit: number }>();
-    for (const item of allItems) { const current = grouped.get(item.productId) || { productId: item.productId, name: item.product.name, sku: item.product.sku, quantity: 0, revenue: 0, profit: 0 }; current.quantity += item.quantity; current.revenue += Number(item.total); current.profit += Number(item.profit); grouped.set(item.productId, current); }
+    const grouped = new Map<string, { productId: string; name: string; sku: string; unit: string; quantity: number; revenue: number; profit: number }>();
+    const unitTotals = new Map<string, number>();
+    for (const item of allItems) { const quantity = Number(item.quantity); const current = grouped.get(item.productId) || { productId: item.productId, name: item.product.name, sku: item.product.sku, unit: item.product.unit, quantity: 0, revenue: 0, profit: 0 }; current.quantity += quantity; current.revenue += Number(item.total); current.profit += Number(item.profit); grouped.set(item.productId, current); unitTotals.set(item.product.unit, (unitTotals.get(item.product.unit) || 0) + quantity); }
     const hourly = Array.from({ length: 24 }, (_, hour) => ({ hour, salesCount: 0, units: 0, revenue: 0 }));
-    for (const sale of sales) { const bucket = hourly[new Date(sale.createdAt).getHours()]; bucket.salesCount += 1; bucket.revenue += Number(sale.totalAmount); bucket.units += sale.items.reduce((sum, item) => sum + item.quantity, 0); }
+    for (const sale of sales) { const bucket = hourly[new Date(sale.createdAt).getHours()]; bucket.salesCount += 1; bucket.revenue += Number(sale.totalAmount); bucket.units += sale.items.reduce((sum, item) => sum + Number(item.quantity), 0); }
     const dailyMap = new Map<string, { date: string; salesCount: number; units: number; revenue: number; profit: number }>();
     const employeeMap = new Map<string, { name: string; salesCount: number; revenue: number; profit: number }>();
     const categoryMap = new Map<string, { name: string; units: number; revenue: number }>();
     for (const sale of sales) {
       const date = new Date(sale.createdAt).toISOString().slice(0, 10);
-      const units = sale.items.reduce((sum, item) => sum + item.quantity, 0);
+      const units = sale.items.reduce((sum, item) => sum + Number(item.quantity), 0);
       const day = dailyMap.get(date) || { date, salesCount: 0, units: 0, revenue: 0, profit: 0 };
       day.salesCount += 1; day.units += units; day.revenue += Number(sale.totalAmount); day.profit += Number(sale.totalProfit); dailyMap.set(date, day);
       const employee = employeeMap.get(sale.userId) || { name: sale.user.name, salesCount: 0, revenue: 0, profit: 0 };
       employee.salesCount += 1; employee.revenue += Number(sale.totalAmount); employee.profit += Number(sale.totalProfit); employeeMap.set(sale.userId, employee);
-      for (const item of sale.items) { const name = item.product.category?.name || 'Без категории'; const category = categoryMap.get(name) || { name, units: 0, revenue: 0 }; category.units += item.quantity; category.revenue += Number(item.total); categoryMap.set(name, category); }
+      for (const item of sale.items) { const name = item.product.category?.name || 'Без категории'; const category = categoryMap.get(name) || { name, units: 0, revenue: 0 }; category.units += Number(item.quantity); category.revenue += Number(item.total); categoryMap.set(name, category); }
     }
     const periodLength = to.getTime() - from.getTime() + 1;
     const previousTo = new Date(from.getTime() - 1); const previousFrom = new Date(from.getTime() - periodLength);
@@ -237,7 +307,17 @@ export class AppService {
     const returns = Number(returnedRevenue._sum.amount || 0);
     const cashIn = cashSales + customerPayments;
     const cashOut = supplierPayments + logistics + expenses + returns;
-    return this.clean({ from, to, salesCount: sales.length, revenue, profit, cost: revenue - profit, expenses, logistics, netProfit: profit - expenses, balance: revenue - expenses, balanceDetails: { revenue, cost: revenue - profit, expenses, logistics, netProfit: profit - expenses, cashIn, cashOut, cashBalance: cashIn - cashOut, returns }, averageCheck: sales.length ? revenue / sales.length : 0, units: allItems.reduce((n, i) => n + i.quantity, 0), hourly, daily: Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date)), employees: Array.from(employeeMap.values()).sort((a, b) => b.revenue - a.revenue), categories: Array.from(categoryMap.values()).sort((a, b) => b.revenue - a.revenue), paymentMethods: Array.from(paymentMap.entries()).map(([method, amount]) => ({ method, amount })), expensesByCategory: Array.from(expenseMap.entries()).map(([category, amount]) => ({ category, amount })), expenseRows, stock: { products: stockRows.length, value: stockRows.reduce((n, product) => n + product.stock * Number(product.purchasePrice), 0), low: stockRows.filter(product => product.stock > 0 && product.stock <= product.minStock), out: stockRows.filter(product => product.stock === 0) }, previous: { salesCount: previous._count, revenue: Number(previous._sum.totalAmount || 0), profit: Number(previous._sum.totalProfit || 0) }, popular: Array.from(grouped.values()).sort((a, b) => b.quantity - a.quantity).slice(0, 10), sales });
+    return this.clean({ from, to, salesCount: sales.length, revenue, profit, cost: revenue - profit, expenses, logistics, netProfit: profit - expenses, balance: revenue - expenses, balanceDetails: { revenue, cost: revenue - profit, expenses, logistics, netProfit: profit - expenses, cashIn, cashOut, cashBalance: cashIn - cashOut, returns }, averageCheck: sales.length ? revenue / sales.length : 0, units: allItems.reduce((n, i) => n + Number(i.quantity), 0), unitsByUnit: Array.from(unitTotals, ([unit, quantity]) => ({ unit, quantity })), hourly,
+        daily: Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+        employees: Array.from(employeeMap.values()).sort((a, b) => b.revenue - a.revenue),
+        categories: Array.from(categoryMap.values()).sort((a, b) => b.revenue - a.revenue),
+        paymentMethods: Array.from(paymentMap.entries()).map(([method, amount]) => ({ method, amount })),
+        expensesByCategory: Array.from(expenseMap.entries()).map(([category, amount]) => ({ category, amount })),
+        expenseRows,
+        stock: { products: stockRows.length, value: stockRows.reduce((n, product) => n + Number(product.stock) * Number(product.purchasePrice), 0), low: stockRows.filter(product => Number(product.stock) > 0 && Number(product.stock) <= Number(product.minStock)), out: stockRows.filter(product => Number(product.stock) === 0) },
+        previous: { salesCount: previous._count, revenue: Number(previous._sum.totalAmount || 0), profit: Number(previous._sum.totalProfit || 0) },
+        popular: Array.from(grouped.values()).sort((a, b) => b.quantity - a.quantity).slice(0, 10),
+        sales });
   }
   async reportFilters() { const [users, categories] = await Promise.all([this.db.user.findMany({ where: { active: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } }), this.db.category.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } })]); return { users, categories }; }
   async audit(query: any) { const limit = Math.min(200, Math.max(1, Number(query.limit) || 100)); return this.db.auditLog.findMany({ take: limit, orderBy: { createdAt: 'desc' }, include: { user: { select: { name: true, email: true } } } }); }

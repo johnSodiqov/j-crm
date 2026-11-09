@@ -40,7 +40,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <button className="mobile-menu-toggle" onClick={() => setMobileOpen(!mobileOpen)} aria-label={mobileOpen ? "Закрыть меню" : "Открыть меню"} aria-expanded={mobileOpen}>{mobileOpen ? <X size={22} /> : <Menu size={22} />}</button>
       {mobileOpen && <button className="mobile-menu-overlay" onClick={() => setMobileOpen(false)} aria-label="Закрыть меню" />}
       <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`}>
-        <div className="brand">SHOP / CRM</div>
+        <Link className="brand" to="/" aria-label={t("Главная")} title={t("Главная")}>SHOP / CRM</Link>
         <button className="theme-toggle" type="button" onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")} aria-label={theme === "dark" ? t("Светлая тема") : t("Темная тема")} title={theme === "dark" ? t("Светлая тема") : t("Темная тема")}>
           {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
           <span>{theme === "dark" ? t("Светлая тема") : t("Темная тема")}</span>

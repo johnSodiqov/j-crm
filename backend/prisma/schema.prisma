@@ -12,6 +12,7 @@ enum Role {
 }
 enum ProductStatus {
   ACTIVE
+  INACTIVE
   ARCHIVED
 }
 enum PaymentMethod {
@@ -66,8 +67,8 @@ model Product {
   categoryId String
   purchasePrice Decimal @db.Decimal(14,2)
   salePrice Decimal @db.Decimal(14,2)
-  stock Int @default(0)
-  minStock Int @default(0)
+  stock Decimal @default(0) @db.Decimal(14,3)
+  minStock Decimal @default(0) @db.Decimal(14,3)
   unit String @default("шт")
   status ProductStatus @default(ACTIVE)
   createdAt DateTime @default(now())
@@ -128,7 +129,7 @@ model SaleItem {
   id String @id @default(cuid())
   saleId String
   productId String
-  quantity Int
+  quantity Decimal @db.Decimal(14,3)
   purchasePrice Decimal @db.Decimal(14,2)
   salePrice Decimal @db.Decimal(14,2)
   profit Decimal @db.Decimal(14,2)
@@ -140,8 +141,8 @@ model StockAdjustment {
   id String @id @default(cuid())
   productId String
   userId String
-  previousStock Int
-  newStock Int
+  previousStock Decimal @db.Decimal(14,3)
+  newStock Decimal @db.Decimal(14,3)
   reason String
   createdAt DateTime @default(now())
   product Product @relation(fields: [productId], references: [id])
@@ -163,7 +164,7 @@ model SaleReturnItem {
   id String @id @default(cuid())
   returnId String
   productId String
-  quantity Int
+  quantity Decimal @db.Decimal(14,3)
   amount Decimal @db.Decimal(14,2)
   return SaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
   product Product @relation(fields: [productId], references: [id])
@@ -174,9 +175,9 @@ model StockMovement {
   productId String
   userId String?
   type StockMovementType
-  quantity Int
-  beforeStock Int
-  afterStock Int
+  quantity Decimal @db.Decimal(14,3)
+  beforeStock Decimal @db.Decimal(14,3)
+  afterStock Decimal @db.Decimal(14,3)
   reason String?
   saleId String?
   createdAt DateTime @default(now())
@@ -295,7 +296,7 @@ model PurchaseItem {
   id String @id @default(cuid())
   purchaseId String
   productId String
-  quantity Int
+  quantity Decimal @db.Decimal(14,3)
   unitCost Decimal @db.Decimal(14,2)
   total Decimal @db.Decimal(14,2)
   actualUnitCost Decimal @default(0) @db.Decimal(14,2)

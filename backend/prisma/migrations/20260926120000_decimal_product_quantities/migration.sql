@@ -1,0 +1,21 @@
+ALTER TABLE "Product"
+  ALTER COLUMN "stock" TYPE DECIMAL(14,3) USING "stock"::DECIMAL(14,3),
+  ALTER COLUMN "minStock" TYPE DECIMAL(14,3) USING "minStock"::DECIMAL(14,3);
+
+ALTER TABLE "SaleItem"
+  ALTER COLUMN "quantity" TYPE DECIMAL(14,3) USING "quantity"::DECIMAL(14,3);
+
+ALTER TABLE "PurchaseItem"
+  ALTER COLUMN "quantity" TYPE DECIMAL(14,3) USING "quantity"::DECIMAL(14,3);
+
+ALTER TABLE "SaleReturnItem"
+  ALTER COLUMN "quantity" TYPE DECIMAL(14,3) USING "quantity"::DECIMAL(14,3);
+
+ALTER TABLE "StockAdjustment"
+  ALTER COLUMN "previousStock" TYPE DECIMAL(14,3) USING "previousStock"::DECIMAL(14,3),
+  ALTER COLUMN "newStock" TYPE DECIMAL(14,3) USING "newStock"::DECIMAL(14,3);
+
+ALTER TABLE "StockMovement"
+  ALTER COLUMN "quantity" TYPE DECIMAL(14,3) USING "quantity"::DECIMAL(14,3),
+  ALTER COLUMN "beforeStock" TYPE DECIMAL(14,3) USING "beforeStock"::DECIMAL(14,3),
+  ALTER COLUMN "afterStock" TYPE DECIMAL(14,3) USING "afterStock"::DECIMAL(14,3);

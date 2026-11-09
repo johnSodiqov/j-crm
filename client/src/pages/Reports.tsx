@@ -24,6 +24,7 @@ export function Reports() {
     queryKey: ["reports", appliedFrom, appliedTo, userId, categoryId],
     queryFn: () => get(`/reports?from=${appliedFrom}&to=${appliedTo}${userId ? `&userId=${userId}` : ""}${categoryId ? `&categoryId=${categoryId}` : ""}`),
   });
+  const unitsSummary = (data?.unitsByUnit || []).map((item: any) => `${item.quantity} ${item.unit}`).join(" · ") || "0";
   const applyPeriod = () => {
     if (!from || !to || from > to) {
       setFilterError(t("Дата начала не может быть позже даты окончания"));
@@ -64,23 +65,24 @@ export function Reports() {
       Товар: item.product.name,
       SKU: item.product.sku,
       Количество: item.quantity,
+      Единица: item.product.unit || "шт",
       Сумма: Number(item.total),
       Прибыль: Number(item.profit),
     })));
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([{ Период: `${appliedFrom} — ${appliedTo}`, "Общая выручка": Number(data.revenue), "Общая прибыль": Number(data.profit), "Количество продаж": data.salesCount, "Продано единиц": data.units }]), "Сводка");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet([{ Период: `${appliedFrom} — ${appliedTo}`, "Общая выручка": Number(data.revenue), "Общая прибыль": Number(data.profit), "Количество продаж": data.salesCount, "Продано единиц": unitsSummary }]), "Сводка");
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(salesRows), "Продажи");
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(data.popular.map((item: any) => ({ Товар: item.name, SKU: item.sku, "Количество продаж": item.quantity, "Продано единиц": item.quantity, Выручка: Number(item.revenue), Прибыль: Number(item.profit) }))), "Товары");
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(data.popular.map((item: any) => ({ Товар: item.name, SKU: item.sku, Количество: item.quantity, Единица: item.unit, Выручка: Number(item.revenue), Прибыль: Number(item.profit) }))), "Товары");
     XLSX.writeFile(workbook, `отчет-${appliedFrom}-${appliedTo}.xlsx`);
   };
   const exportPdf = async () => {
     if (!data) return;
     const [{ jsPDF }] = await Promise.all([import("jspdf")]);
     const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character] || character);
-    const productRows = data.popular.map((item: any) => `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.sku)}</td><td>${item.quantity} шт.</td><td>${money(item.revenue)}</td><td>${money(item.profit)}</td></tr>`).join("");
-    const saleRows = data.sales.flatMap((sale: any) => sale.items.map((item: any) => `<tr><td>${new Date(sale.createdAt).toLocaleString("ru-RU")}</td><td>${escapeHtml(sale.user?.name || "-")}</td><td>${escapeHtml(item.product.name)}<br><small>SKU: ${escapeHtml(item.product.sku)}</small></td><td>${item.quantity} шт.</td><td>${money(item.total)}</td><td>${money(item.profit)}</td></tr>`)).join("");
+    const productRows = data.popular.map((item: any) => `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.sku)}</td><td>${item.quantity} ${escapeHtml(item.unit || "шт")}</td><td>${money(item.revenue)}</td><td>${money(item.profit)}</td></tr>`).join("");
+    const saleRows = data.sales.flatMap((sale: any) => sale.items.map((item: any) => `<tr><td>${new Date(sale.createdAt).toLocaleString("ru-RU")}</td><td>${escapeHtml(sale.user?.name || "-")}</td><td>${escapeHtml(item.product.name)}<br><small>SKU: ${escapeHtml(item.product.sku)}</small></td><td>${item.quantity} ${escapeHtml(item.product.unit || "шт")}</td><td>${money(item.total)}</td><td>${money(item.profit)}</td></tr>`)).join("");
     const sheet = document.createElement("div");
-    sheet.innerHTML = `<style>body{font-family:Arial,sans-serif;color:#17211c}h1{font-size:22px}h2{font-size:15px;margin:18px 0 8px}p{font-size:11px}table{width:100%;border-collapse:collapse;font-size:9px}th,td{border:1px solid #ccd5cc;padding:5px;text-align:left}th{background:#edf5e5}small{color:#66736a}</style><h1>Отчет о продажах</h1><p>Период: ${appliedFrom} — ${appliedTo}</p><h2>Сводка</h2><table><tr><th>Выручка</th><th>Прибыль</th><th>Продано единиц</th><th>Количество продаж</th></tr><tr><td>${money(data.revenue)}</td><td>${money(data.profit)}</td><td>${data.units}</td><td>${data.salesCount}</td></tr></table><h2>Самые продаваемые товары</h2><table><tr><th>Товар</th><th>SKU</th><th>Кол-во</th><th>Выручка</th><th>Прибыль</th></tr>${productRows || '<tr><td colspan="5">За выбранный период продаж нет</td></tr>'}</table><h2>Детализация продаж</h2><table><tr><th>Дата</th><th>Сотрудник</th><th>Товар</th><th>Кол-во</th><th>Сумма</th><th>Прибыль</th></tr>${saleRows || '<tr><td colspan="6">За выбранный период продаж нет</td></tr>'}</table>`;
+    sheet.innerHTML = `<style>body{font-family:Arial,sans-serif;color:#17211c}h1{font-size:22px}h2{font-size:15px;margin:18px 0 8px}p{font-size:11px}table{width:100%;border-collapse:collapse;font-size:9px}th,td{border:1px solid #ccd5cc;padding:5px;text-align:left}th{background:#edf5e5}small{color:#66736a}</style><h1>Отчет о продажах</h1><p>Период: ${appliedFrom} — ${appliedTo}</p><h2>Сводка</h2><table><tr><th>Выручка</th><th>Прибыль</th><th>Продано единиц</th><th>Количество продаж</th></tr><tr><td>${money(data.revenue)}</td><td>${money(data.profit)}</td><td>${escapeHtml(unitsSummary)}</td><td>${data.salesCount}</td></tr></table><h2>Самые продаваемые товары</h2><table><tr><th>Товар</th><th>SKU</th><th>Кол-во</th><th>Выручка</th><th>Прибыль</th></tr>${productRows || '<tr><td colspan="5">За выбранный период продаж нет</td></tr>'}</table><h2>Детализация продаж</h2><table><tr><th>Дата</th><th>Сотрудник</th><th>Товар</th><th>Кол-во</th><th>Сумма</th><th>Прибыль</th></tr>${saleRows || '<tr><td colspan="6">За выбранный период продаж нет</td></tr>'}</table>`;
     Object.assign(sheet.style, { position: "absolute", left: "-10000px", top: "0", width: "1000px", padding: "24px", background: "#fff" });
     document.body.appendChild(sheet);
     const pdf = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
@@ -113,7 +115,7 @@ export function Reports() {
             <div className="card"><div className="label">{t("Продаж")}</div><div className="metric">{data?.salesCount || 0}</div></div>
             <div className="card"><div className="label">{t("Выручка")}</div><div className="metric">{money(data?.revenue)}</div></div>
             <div className="card"><div className="label">{t("Прибыль")}</div><div className="metric">{money(data?.profit)}</div></div>
-            <div className="card"><div className="label">{t("Продано единиц")}</div><div className="metric">{data?.units || 0}</div></div>
+            <div className="card"><div className="label">{t("Продано единиц")}</div><div className="metric">{unitsSummary}</div></div>
             <div className="card"><div className="label">{t("Средний чек")}</div><div className="metric">{money(data?.averageCheck)}</div></div>
           </div>
           <div className="grid grid4" style={{ marginTop: 16 }}>
@@ -138,7 +140,7 @@ export function Reports() {
           </div>
           <div className="card" style={{ marginTop: 18 }}>
             <h2 className="display">Детализация продаж</h2>
-            <div className="analytics-table-desktop" style={{ overflowX: "auto" }}><table className="table"><thead><tr><th>Время</th><th>Сотрудник</th><th>Товары</th><th>Единиц</th><th>Сумма</th><th>Прибыль</th></tr></thead><tbody>{data?.sales?.length ? data.sales.map((sale: any) => <tr key={sale.id}><td>{new Date(sale.createdAt).toLocaleString("ru-RU")}</td><td>{sale.user?.name || "-"}</td><td>{sale.items.map((item: any) => <div key={item.id}>{item.product.name} × {item.quantity} <span className="muted">({money(item.salePrice)})</span></div>)}</td><td>{sale.items.reduce((sum: number, item: any) => sum + item.quantity, 0)}</td><td>{money(sale.totalAmount)}</td><td>{money(sale.totalProfit)}</td></tr>) : <tr><td colSpan={6} className="muted">Продаж за выбранный период нет</td></tr>}</tbody></table></div>
+            <div className="analytics-table-desktop" style={{ overflowX: "auto" }}><table className="table"><thead><tr><th>Время</th><th>Сотрудник</th><th>Товары</th><th>Единиц</th><th>Сумма</th><th>Прибыль</th></tr></thead><tbody>{data?.sales?.length ? data.sales.map((sale: any) => <tr key={sale.id}><td>{new Date(sale.createdAt).toLocaleString("ru-RU")}</td><td>{sale.user?.name || "-"}</td><td>{sale.items.map((item: any) => <div key={item.id}>{item.product.name} × {item.quantity} {item.product.unit || "шт"} <span className="muted">({money(item.salePrice)})</span></div>)}</td><td>{sale.items.map((item: any) => `${item.quantity} ${item.product.unit || "шт"}`).join(" · ")}</td><td>{money(sale.totalAmount)}</td><td>{money(sale.totalProfit)}</td></tr>) : <tr><td colSpan={6} className="muted">Продаж за выбранный период нет</td></tr>}</tbody></table></div>
             <div className="analytics-cards-mobile"><MobileSalesDetails sales={data?.sales || []} /></div>
           </div>
         </>

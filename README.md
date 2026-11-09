@@ -7,9 +7,10 @@ CRM for a retail shop. The repository contains a React/Vite client, a NestJS API
 - Git
 - Node.js 20 or newer
 - npm
-- Docker Desktop with Docker Compose
+- PostgreSQL for Windows when using `start.bat`
+- Docker Desktop with Docker Compose only when using `setup.ps1` or `docker compose`
 
-PostgreSQL does not need to be installed separately. Compose starts it locally.
+The Docker-based setup starts PostgreSQL in a container. The one-click Windows launcher instead connects to a locally installed PostgreSQL service.
 
 ## Quick Start
 
@@ -47,6 +48,10 @@ The setup script:
 6. Seeds demo users and starter products.
 
 ## Run Development Servers
+
+### Windows one-click startup without Docker
+
+Install Node.js 20 or newer and PostgreSQL for Windows, and make sure the PostgreSQL service is running. Create the `shop_crm` database and configure `DATABASE_URL` in `backend/.env` to match your local PostgreSQL username and password. Then double-click `start.bat` in the project root. It installs npm dependencies if needed, applies migrations, seeds demo data once, starts the API and web app, and opens http://localhost:5173. Docker is not used. Keep the API and Web windows open while using the app.
 
 Use two terminals from the repository root.
 

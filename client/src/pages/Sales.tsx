@@ -3,9 +3,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, Package, Plus, UserPlus } from "lucide-react";
 import { get, post } from "../api/client";
 import { Header } from "../components/Header";
+import { MoneyInput } from "../components/MoneyInput";
 import { Modal } from "../components/Modal";
 import { money } from "../utils/format";
 import { useLanguage } from "../utils/i18n";
+import { quantityStep, quantityLabel } from "../utils/product";
 
 type SalesSelectOption = { value: string; label: string };
 
@@ -91,11 +93,13 @@ export function Sales() {
 
   const add = (product: any) => {
     const existing = cart.find((item) => item.id === product.id);
+    const increment = Math.min(1, Number(product.stock) - (existing?.qty || 0));
+    if (increment <= 0) return;
     if (existing) {
-      setCart(cart.map((item) => item.id === product.id ? { ...item, qty: item.qty + 1 } : item));
+      setCart(cart.map((item) => item.id === product.id ? { ...item, qty: Number((item.qty + increment).toFixed(3)) } : item));
       return;
     }
-    setCart([...cart, { ...product, qty: 1 }]);
+    setCart([...cart, { ...product, qty: increment }]);
   };
 
   const isPaymentValid = paymentMethod !== "MIXED" ? total > 0 : Math.abs(mixedTotal - total) < 0.01;
@@ -123,10 +127,10 @@ export function Sales() {
                 <div className="product-card-image"><Package size={30} strokeWidth={1.8} /></div>
                 <div className="product-card-body">
                   <div className="product-card-title">{product.name}</div>
-                  <div className="product-card-price">{money(product.salePrice)}</div>
-                  <div className="product-card-stock">{t("Остаток")}: {product.stock}</div>
+                  <div className="product-card-price">{money(product.salePrice)} / {product.unit || "шт"}</div>
+                  <div className="product-card-stock">{t("Остаток")}: {quantityLabel(product.stock, product.unit)}</div>
                 </div>
-                <button className="button secondary product-card-action" type="button" onClick={() => add(product)} disabled={product.stock < 1}>
+                <button className="button secondary product-card-action" type="button" onClick={() => add(product)} disabled={Number(product.stock) <= 0}>
                   <Plus size={14} /> {t("Добавить")}
                 </button>
               </div>
@@ -140,7 +144,7 @@ export function Sales() {
             {cart.map((item) => (
               <div className="cart-line" key={item.id}>
                 <span className="cart-name">{item.name}</span>
-                <input className="input cart-qty" type="number" min="1" max={item.stock} value={item.qty} onChange={(event) => setCart(cart.map((row) => row.id === item.id ? { ...row, qty: Number(event.target.value) } : row))} />
+                <input className="input cart-qty" type="number" aria-label={`${t("Количество")} (${item.unit})`} min={quantityStep(item.unit) === "1" ? "1" : "0.001"} max={item.stock} step={quantityStep(item.unit)} value={item.qty || ""} onChange={(event) => setCart(cart.map((row) => row.id === item.id ? { ...row, qty: Number(event.target.value) } : row))} />
                 <b className="cart-total">{money(item.salePrice * item.qty)}</b>
               </div>
             ))}
@@ -167,19 +171,19 @@ export function Sales() {
             <div className="mixed-payments">
               <label className="label">
                 {t("Наличные")}
-                <input className="input" type="number" min="0" step="0.01" value={cashAmount} onChange={(event) => setCashAmount(Number(event.target.value) || 0)} />
+                <MoneyInput className="input" value={cashAmount} onValueChange={(value) => setCashAmount(value === "" ? 0 : value)} />
               </label>
               <label className="label">
                 {t("Банковская карта")}
-                <input className="input" type="number" min="0" step="0.01" value={cardAmount} onChange={(event) => setCardAmount(Number(event.target.value) || 0)} />
+                <MoneyInput className="input" value={cardAmount} onValueChange={(value) => setCardAmount(value === "" ? 0 : value)} />
               </label>
               <label className="label">
                 {t("Перевод")}
-                <input className="input" type="number" min="0" step="0.01" value={transferAmount} onChange={(event) => setTransferAmount(Number(event.target.value) || 0)} />
+                <MoneyInput className="input" value={transferAmount} onValueChange={(value) => setTransferAmount(value === "" ? 0 : value)} />
               </label>
               <label className="label">
                 {t("Долг")}
-                <input className="input" type="number" min="0" step="0.01" value={debtAmount} onChange={(event) => setDebtAmount(Number(event.target.value) || 0)} />
+                <MoneyInput className="input" value={debtAmount} onValueChange={(value) => setDebtAmount(value === "" ? 0 : value)} />
               </label>
               <div className="muted">{t("Сумма")}: {money(mixedTotal)} / {money(total)}</div>
             </div>
@@ -204,9 +208,9 @@ export function Sales() {
       </div>
       {newCustomerOpen && <Modal title={t("Новый клиент")} close={() => setNewCustomerOpen(false)}>
         <form className="new-customer-form" onSubmit={(event) => { event.preventDefault(); if (newCustomerName.trim()) createCustomer.mutate(); }}>
-          <label>{t("Имя")}<input className="input" autoFocus required value={newCustomerName} onChange={(event) => setNewCustomerName(event.target.value)} /></label>
+          <label>{t("Имя")}<input className="input" type="text" autoFocus required value={newCustomerName} onChange={(event) => setNewCustomerName(event.target.value)} /></label>
           <label>{t("Телефон")}<input className="input" type="tel" value={newCustomerPhone} onChange={(event) => setNewCustomerPhone(event.target.value)} /></label>
-          <label>{t("Адрес")}<input className="input" value={newCustomerAddress} onChange={(event) => setNewCustomerAddress(event.target.value)} /></label>
+          <label>{t("Адрес")}<input className="input" type="text" value={newCustomerAddress} onChange={(event) => setNewCustomerAddress(event.target.value)} /></label>
           {createCustomer.isError && <div className="error">{(createCustomer.error as Error).message}</div>}
           <button className="button" type="submit" disabled={!newCustomerName.trim() || createCustomer.isPending}>{createCustomer.isPending ? t("Сохранение...") : t("Добавить клиента")}</button>
         </form>

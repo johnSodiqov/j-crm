@@ -49,7 +49,7 @@ export function Todo() {
       <section className="card todo-create-card">
         <div className="todo-section-heading"><ClipboardCheck size={20} /><h2 className="display">{t("Новая задача")}</h2></div>
         <form className="todo-form" onSubmit={(event) => { event.preventDefault(); if (title.trim()) create.mutate(); }}>
-          <label>{t("Название")}<input className="input" required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Например: проверить остатки" /></label>
+          <label>{t("Название")}<input className="input" type="text" required value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Например: проверить остатки" /></label>
           <label>{t("Описание")}<textarea className="input todo-description-input" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Дополнительные детали" rows={4} /></label>
           {create.isError && <div className="error">{(create.error as Error).message}</div>}
           <button className="button" type="submit" disabled={!title.trim() || create.isPending}><Plus size={16} /> {create.isPending ? t("Добавление...") : t("Добавить задачу")}</button>
